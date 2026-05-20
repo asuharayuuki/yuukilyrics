@@ -1,0 +1,170 @@
+name: Build iOS IPA (Unsigned)
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build iOS IPA (Unsigned)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Show build environment
+        run: |
+          flutter --version
+          xcodebuild -version
+          swift --version
+          xcrun --sdk iphoneos --show-sdk-version
+          echo "macOS version: $(sw_vers -productVersion)"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate iOS Podfile (if missing)
+        run: |
+          if [ ! -f ios/Podfile ]; then
+            flutter build ios --config-only --no-codesign
+          fi
+
+      - name: Set iOS deployment target in Podfile
+        run: |
+          cd ios
+          # Ensure minimum deployment target for media_kit and ffmpeg_kit
+          if grep -q "platform :ios" Podfile; then
+            sed -i '' "s/platform :ios, '.*'/platform :ios, '13.0'/" Podfile
+          else
+            echo "platform :ios, '13.0'" | cat - Podfile > temp && mv temp Podfile
+          fi
+          cat Podfile
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update || pod install
+
+      - name: Create ExportOptions.plist (unsigned)
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>development</string>
+            <key>compileBitcode</key>
+            <false/>
+            <key>signingStyle</key>
+            <string>manual</string>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Build iOS (no codesign)
+        run: |
+          flutter build ios --release --no-codesign 2>&1 | tee build.log
+
+      - name: Create unsigned IPA
+        run: |
+          set -euo pipefail
+
+          APP_PATH="build/ios/iphoneos/Runner.app"
+
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "ERROR: App not found at $APP_PATH"
+            ls -la build/ios/iphoneos/ || true
+            exit 1
+          fi
+
+          # Create Payload directory
+          PAYLOAD_DIR="$RUNNER_TEMP/Payload"
+          mkdir -p "$PAYLOAD_DIR"
+          cp -R "$APP_PATH" "$PAYLOAD_DIR/"
+
+          # Create IPA
+          cd "$RUNNER_TEMP"
+          zip -r yuukilyrics-unsigned.ipa Payload
+
+          IPA_PATH="$RUNNER_TEMP/yuukilyrics-unsigned.ipa"
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+          echo "Unsigned IPA created:"
+          ls -lh "$IPA_PATH"
+
+      - name: Extract version info
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          BUILD=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f2)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION, Build: $BUILD"
+
+      - name: Prepare artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ios
+
+          VERSION="${{ steps.version.outputs.version }}"
+          BUILD="${{ steps.version.outputs.build }}"
+
+          OUTPUT_NAME="yuukilyrics-${VERSION}+${BUILD}-unsigned.ipa"
+          cp "$IPA_PATH" "dist/ios/$OUTPUT_NAME"
+          cp "$IPA_PATH" "dist/ios/yuukilyrics-unsigned.ipa"
+
+          cat > "dist/ios/BUILD_INFO.txt" <<EOF
+          yuukilyrics iOS Build Information
+          ==================================
+
+          Version: $VERSION
+          Build: $BUILD
+          Configuration: Release
+          Built: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Commit: $GITHUB_SHA
+          Branch: ${GITHUB_REF#refs/heads/}
+
+          Note: This is an UNSIGNED IPA.
+          To install, use AltStore/SideStore or sign with your own certificate.
+          EOF
+
+          echo "Artifacts prepared:"
+          ls -lh dist/ios/
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuukilyrics-iOS-unsigned
+          path: |
+            dist/ios/*.ipa
+            dist/ios/BUILD_INFO.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7

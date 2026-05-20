@@ -1,0 +1,300 @@
+name: Build iOS IPA (Unsigned)
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  SCHEME_NAME: "Anywhere"
+  CONFIGURATION: "Release"
+
+jobs:
+  build-ios:
+    name: Build iOS IPA (Unsigned)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show build environment
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun --sdk iphoneos --show-sdk-version
+          echo "macOS version: $(sw_vers -productVersion)"
+
+      - name: Clean build folder
+        run: |
+          rm -rf ~/Library/Developer/Xcode/DerivedData
+          xcodebuild clean \
+            -project Anywhere.xcodeproj \
+            -scheme "$SCHEME_NAME" \
+            -configuration "$CONFIGURATION" || true
+
+      - name: Build archive (unsigned)
+        run: |
+          set -euo pipefail
+
+          ARCHIVE_PATH="$RUNNER_TEMP/Anywhere.xcarchive"
+
+          xcodebuild archive \
+            -project Anywhere.xcodeproj \
+            -scheme "$SCHEME_NAME" \
+            -configuration "$CONFIGURATION" \
+            -archivePath "$ARCHIVE_PATH" \
+            -destination "generic/platform=iOS" \
+            -allowProvisioningUpdates \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO \
+            | tee build.log
+
+          # Verify archive was created
+          if [[ ! -d "$ARCHIVE_PATH" ]]; then
+            echo "ERROR: Archive was not created at $ARCHIVE_PATH"
+            echo "Build log:"
+            cat build.log
+            exit 1
+          fi
+
+          echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> "$GITHUB_ENV"
+
+          echo "Archive created successfully:"
+          ls -la "$ARCHIVE_PATH"
+          echo ""
+          echo "Archive contents:"
+          ls -la "$ARCHIVE_PATH/Products/Applications/" || true
+
+      - name: Create unsigned IPA
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$ARCHIVE_PATH/Products/Applications/Anywhere.app"
+
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "ERROR: App not found at $APP_PATH"
+            ls -la "$ARCHIVE_PATH/Products/Applications/" || true
+            exit 1
+          fi
+
+          # Create Payload directory
+          PAYLOAD_DIR="$RUNNER_TEMP/Payload"
+          mkdir -p "$PAYLOAD_DIR"
+
+          # Copy app to Payload
+          cp -R "$APP_PATH" "$PAYLOAD_DIR/"
+
+          # Create IPA (just a zip file with .ipa extension)
+          cd "$RUNNER_TEMP"
+          zip -r Anywhere-unsigned.ipa Payload
+
+          IPA_PATH="$RUNNER_TEMP/Anywhere-unsigned.ipa"
+
+          if [[ ! -f "$IPA_PATH" ]]; then
+            echo "ERROR: IPA was not created"
+            exit 1
+          fi
+
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+          echo "Unsigned IPA created:"
+          ls -lh "$IPA_PATH"
+
+      - name: Extract version info
+        id: version
+        run: |
+          VERSION=$(grep -A 1 "MARKETING_VERSION" Anywhere.xcodeproj/project.pbxproj | grep "=" | head -1 | sed 's/.*= \(.*\);/\1/' | tr -d ' ')
+          BUILD=$(grep -A 1 "CURRENT_PROJECT_VERSION" Anywhere.xcodeproj/project.pbxproj | grep "=" | head -1 | sed 's/.*= \(.*\);/\1/' | tr -d ' ')
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+
+          echo "Version: $VERSION"
+          echo "Build: $BUILD"
+
+      - name: Prepare artifacts
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/ios
+
+          VERSION="${{ steps.version.outputs.version }}"
+          BUILD="${{ steps.version.outputs.build }}"
+
+          # Copy with version info
+          OUTPUT_NAME="Anywhere-${VERSION}-${BUILD}-unsigned.ipa"
+          cp "$IPA_PATH" "dist/ios/$OUTPUT_NAME"
+
+          # Also create a generic name
+          cp "$IPA_PATH" "dist/ios/Anywhere-unsigned.ipa"
+
+          # Create a build info file
+          cat > "dist/ios/BUILD_INFO.txt" <<EOF
+          Anywhere iOS Build Information
+          ================================
+
+          Version: $VERSION
+          Build: $BUILD
+          Configuration: $CONFIGURATION
+          Xcode: latest-stable
+          Built: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Commit: $GITHUB_SHA
+          Branch: ${GITHUB_REF#refs/heads/}
+
+          Note: This is an UNSIGNED IPA
+          ================================
+
+          To install this IPA, you need to:
+          1. Sign it with your own certificate, OR
+          2. Use a tool like AltStore/SideStore that can sign during installation
+
+          Signing with your own certificate:
+          -----------------------------------
+          # Using zsign (https://github.com/zhlynn/zsign)
+          zsign -k your-certificate.p12 -p password -m your-profile.mobileprovision -o signed.ipa Anywhere-unsigned.ipa
+
+          # Using iOS App Signer (GUI tool for macOS)
+          https://dantheman827.github.io/ios-app-signer/
+
+          Installing with AltStore/SideStore:
+          -----------------------------------
+          1. Install AltStore or SideStore on your iOS device
+          2. Transfer the IPA to your device
+          3. Open in AltStore/SideStore - it will sign automatically
+          4. Install
+
+          Bundle Identifiers:
+          -----------------------------------
+          Main App: com.argsment.Anywhere
+          Network Extension: com.argsment.Anywhere.Network-Extension
+          Widget: com.argsment.Anywhere.Widget
+
+          Required Capabilities:
+          -----------------------------------
+          - Network Extensions (packet-tunnel-provider)
+          - App Groups (group.com.argsment.Anywhere)
+          - Keychain Sharing
+
+          Minimum iOS Version: 17.0
+          EOF
+
+          echo "Artifacts prepared:"
+          ls -lh dist/ios/
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anywhere-iOS-unsigned
+          path: |
+            dist/ios/*.ipa
+            dist/ios/BUILD_INFO.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Create release on tag push
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: Anywhere-iOS-unsigned
+          path: artifacts/
+
+      - name: Extract version info
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create release notes
+        run: |
+          cat > release-notes.md <<EOF
+          # Anywhere v${{ steps.version.outputs.version }}
+
+          ## 📦 Downloads
+
+          - **Anywhere-unsigned.ipa** - Unsigned IPA for sideloading
+          - **BUILD_INFO.txt** - Build information and installation instructions
+
+          ## ⚠️ Important Notes
+
+          This is an **UNSIGNED** IPA. You need to sign it before installation.
+
+          ### Installation Methods
+
+          #### Option 1: AltStore / SideStore (Recommended)
+          1. Install [AltStore](https://altstore.io/) or [SideStore](https://sidestore.io/)
+          2. Transfer the IPA to your device
+          3. Open in AltStore/SideStore
+          4. It will sign and install automatically
+
+          #### Option 2: Manual Signing
+          Use tools like:
+          - [zsign](https://github.com/zhlynn/zsign) (command line)
+          - [iOS App Signer](https://dantheman827.github.io/ios-app-signer/) (GUI for macOS)
+
+          ## 🔧 Technical Details
+
+          - **Minimum iOS**: 17.0
+          - **Configuration**: Release
+          - **Architecture**: arm64
+          - **Xcode**: 16.2
+
+          ## 📝 Changelog
+
+          See commit history for detailed changes.
+
+          ## 🐛 Known Issues
+
+          - This build includes SideStore support (10.7.0.1 loopback)
+          - VPN icon visibility depends on settings
+
+          ## 📄 License
+
+          See LICENSE file in repository.
+          EOF
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Anywhere v${{ steps.version.outputs.version }}"
+          body_path: release-notes.md
+          files: |
+            artifacts/*.ipa
+            artifacts/BUILD_INFO.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: true
