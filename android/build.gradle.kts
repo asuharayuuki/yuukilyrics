@@ -1,3 +1,7 @@
+buildscript {
+    extra.set("ffmpegKitPackage", "audio")
+}
+
 allprojects {
     repositories {
         google()

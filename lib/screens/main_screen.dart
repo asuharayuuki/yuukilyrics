@@ -11,6 +11,8 @@ import '../services/lyrics_state_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import '../widgets/ass_export_dialog.dart';
+import '../services/ass_exporter.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -49,13 +51,29 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _openMedia() async {
     FilePickerResult? result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['mp3', 'mp4', 'wav', 'flac', 'mkv', 'avi', 'aac'],
+      type: (Platform.isIOS || Platform.isMacOS || Platform.isAndroid)
+          ? FileType.any
+          : FileType.custom,
+      allowedExtensions:
+          (Platform.isIOS || Platform.isMacOS || Platform.isAndroid)
+          ? null
+          : [
+              'mp3',
+              'mp4',
+              'wav',
+              'flac',
+              'mkv',
+              'avi',
+              'aac',
+              'opus',
+              'webm',
+              'ogg',
+            ],
     );
 
     if (result != null && result.files.single.path != null) {
       final path = result.files.single.path!;
-      
+
       setState(() {
         _mediaFilePath = path;
         _isLoadingMedia = true;
@@ -76,8 +94,13 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _openLrc() async {
     FilePickerResult? result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['lrc', 'txt'],
+      type: (Platform.isIOS || Platform.isMacOS || Platform.isAndroid)
+          ? FileType.any
+          : FileType.custom,
+      allowedExtensions:
+          (Platform.isIOS || Platform.isMacOS || Platform.isAndroid)
+          ? null
+          : ['lrc', 'txt'],
     );
 
     if (result != null && result.files.single.path != null) {
@@ -90,9 +113,9 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _exportLrc() async {
     final lrcText = _lyricsState.rawText;
     if (lrcText.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('歌词内容为空，无法导出。')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('歌词内容为空，无法导出。')));
       return;
     }
 
@@ -130,19 +153,86 @@ class _MainScreenState extends State<MainScreen> {
         if (outputPath != null) {
           final file = File(outputPath);
           await file.writeAsString(lrcText);
-          
+
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('已成功导出至：$outputPath')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('已成功导出至：$outputPath')));
           }
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      }
+    }
+  }
+
+  Future<void> _exportAss() async {
+    if (_lyricsState.document == null || _lyricsState.document!.lines.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('歌词内容为空，无法导出。')));
+      return;
+    }
+
+    final settings = await showDialog<AssExportSettings>(
+      context: context,
+      builder: (context) => const AssExportDialog(),
+    );
+    if (settings == null) return; // User cancelled
+
+    String filename = 'karaoke';
+    if (_mediaFilePath != null) {
+      filename = _mediaFilePath!.split(RegExp(r'[/\\]')).last;
+      final lastDotIdx = filename.lastIndexOf('.');
+      if (lastDotIdx != -1) {
+        filename = filename.substring(0, lastDotIdx);
+      }
+    }
+
+    try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/$filename.ass');
+        await AssExporter.export(
+          tempFile.path,
+          _lyricsState.document!,
+          settings,
         );
+
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(tempFile.path)],
+            subject: '导出字幕: $filename.ass',
+          ),
+        );
+      } else {
+        final String? outputPath = await FilePicker.saveFile(
+          dialogTitle: '选择保存 ASS 字幕的路径',
+          fileName: '$filename.ass',
+        );
+
+        if (outputPath != null) {
+          await AssExporter.export(
+            outputPath,
+            _lyricsState.document!,
+            settings,
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('已成功导出高级ASS至：$outputPath')));
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ASS 导出失败：$e')));
       }
     }
   }
@@ -151,15 +241,19 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('yuukilyrics', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'yuukilyrics',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: false,
         actions: [
           if (_isLoadingMedia)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: SizedBox(
-                width: 16, height: 16, 
-                child: CircularProgressIndicator(strokeWidth: 2)
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
           else
@@ -173,12 +267,40 @@ class _MainScreenState extends State<MainScreen> {
             onPressed: _openLrc,
             icon: const Icon(Icons.description),
           ),
-          IconButton(
-            tooltip: 'Export LRC',
-            onPressed: _exportLrc,
-            icon: Icon(Platform.isAndroid || Platform.isIOS ? Icons.share : Icons.save_alt),
+          PopupMenuButton<String>(
+            tooltip: '导出...',
+            icon: Icon(
+              Platform.isAndroid || Platform.isIOS
+                  ? Icons.share
+                  : Icons.save_alt,
+            ),
+            onSelected: (value) {
+              if (value == 'txt') {
+                _exportLrc();
+              } else if (value == 'ass') {
+                _exportAss();
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'txt',
+                child: ListTile(
+                  leading: Icon(Icons.text_snippet),
+                  title: Text('导出 LRC 文本'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'ass',
+                child: ListTile(
+                  leading: Icon(Icons.subtitles),
+                  title: Text('导出高级 ASS 字幕'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 8),
           IconButton(
             tooltip: 'Toggle Edit Mode',
             icon: Icon(_isTextMode ? Icons.code : Icons.edit_note),
@@ -212,7 +334,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
           ),
-          
+
           // Lyrics Editor
           Expanded(
             flex: 5,
@@ -232,15 +354,18 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
           ),
-          
+
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+            padding: const EdgeInsets.symmetric(
+              vertical: 8.0,
+              horizontal: 12.0,
+            ),
             child: ToolbarArea(
               mediaPlayer: _mediaPlayer,
               lyricsState: _lyricsState,
             ),
           ),
-          
+
           // Main Tagging Button
           Padding(
             padding: const EdgeInsets.fromLTRB(12.0, 0, 12.0, 16.0),

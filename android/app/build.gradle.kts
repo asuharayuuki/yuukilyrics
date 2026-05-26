@@ -24,7 +24,7 @@ android {
         applicationId = "com.example.yuukilyrics"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -35,6 +35,19 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts.add("**/libc++_shared.so")
+            pickFirsts.add("**/libavcodec.so")
+            pickFirsts.add("**/libavformat.so")
+            pickFirsts.add("**/libswscale.so")
+            pickFirsts.add("**/libavutil.so")
+            pickFirsts.add("**/libavfilter.so")
+            pickFirsts.add("**/libswresample.so")
         }
     }
 }

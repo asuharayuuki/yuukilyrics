@@ -123,40 +123,21 @@ jobs:
       - name: Prepare artifacts
         run: |
           set -euo pipefail
-          mkdir -p dist/ios
+          mkdir -p dist
 
           VERSION="${{ steps.version.outputs.version }}"
           BUILD="${{ steps.version.outputs.build }}"
 
-          OUTPUT_NAME="yuukilyrics-${VERSION}+${BUILD}-unsigned.ipa"
-          cp "$IPA_PATH" "dist/ios/$OUTPUT_NAME"
-          cp "$IPA_PATH" "dist/ios/yuukilyrics-unsigned.ipa"
+          cp "$IPA_PATH" "dist/yuukilyrics-${VERSION}+${BUILD}-unsigned.ipa"
 
-          cat > "dist/ios/BUILD_INFO.txt" <<EOF
-          yuukilyrics iOS Build Information
-          ==================================
-
-          Version: $VERSION
-          Build: $BUILD
-          Configuration: Release
-          Built: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          Commit: $GITHUB_SHA
-          Branch: ${GITHUB_REF#refs/heads/}
-
-          Note: This is an UNSIGNED IPA.
-          To install, use AltStore/SideStore or sign with your own certificate.
-          EOF
-
-          echo "Artifacts prepared:"
-          ls -lh dist/ios/
+          echo "Artifact prepared:"
+          ls -lh dist/
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: yuukilyrics-iOS-unsigned
-          path: |
-            dist/ios/*.ipa
-            dist/ios/BUILD_INFO.txt
+          name: yuukilyrics-unsigned
+          path: dist/yuukilyrics-${{ steps.version.outputs.version }}+${{ steps.version.outputs.build }}-unsigned.ipa
           if-no-files-found: error
           retention-days: 90
 

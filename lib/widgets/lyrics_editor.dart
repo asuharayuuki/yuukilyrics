@@ -4,26 +4,30 @@ import '../services/lyrics_state_service.dart';
 import '../services/media_player_service.dart';
 import '../models/lyric_ast.dart';
 import 'dart:io' show Platform;
-import 'package:google_fonts/google_fonts.dart';
+import 'dart:ui' as ui;
+
+import 'lrc_syntax_controller.dart';
 
 // ─── CharCell: the smallest rendering unit ─────────────────────────────────
 class CharCell {
   final String text;
-  final String? ruby;        // the combined ruby text
+  final String? ruby; // the combined ruby text
   final int lineIndex;
-  final int nodeIndex;       // index in line.nodes
-  final int charOffset;      // offset within text node
+  final int nodeIndex; // index in line.nodes
+  final int? tagNodeIndex; // index of preceding standalone time tag node, if any
+  final int charOffset; // offset within text node
   final List<Duration?> startTimes; // one start time for each cursor dot
   final Duration? karaokeStartTime; // for karaoke wipe start
-  final bool hasEndTag;      // show Tag-10 marker
+  final bool hasEndTag; // show Tag-10 marker
   final bool isEndTagUntagged; // is the Tag-10 missing a timestamp?
-  final Duration? endTime;   // for karaoke: when this cell ends
+  final Duration? endTime; // for karaoke: when this cell ends
 
   CharCell({
     required this.text,
     this.ruby,
     required this.lineIndex,
     required this.nodeIndex,
+    this.tagNodeIndex,
     this.charOffset = 0,
     required this.startTimes,
     this.karaokeStartTime,
@@ -51,28 +55,56 @@ class LyricsEditor extends StatefulWidget {
 }
 
 class _LyricsEditorState extends State<LyricsEditor> {
-  late TextEditingController _textController;
+  late LrcSyntaxController _textController;
   late FocusNode _textFocusNode;
   final ItemScrollController _itemScrollController = ItemScrollController();
-  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
   int _currentActiveLine = -1;
+  int _lastActiveCursorLine = -1;
+
+  // Code editor scroll synchronization & text listener
+  late ScrollController _textScrollController;
+  late ScrollController _gutterScrollController;
 
   @override
   void initState() {
     super.initState();
     _textFocusNode = FocusNode();
-    _textController = TextEditingController(text: widget.lyricsState.rawText);
+    _textController = LrcSyntaxController(text: widget.lyricsState.rawText);
+    _textScrollController = ScrollController();
+    _gutterScrollController = ScrollController();
+
+    _textScrollController.addListener(_syncGutterScroll);
+    _textController.addListener(_onTextChanged);
+
     widget.lyricsState.addListener(_onStateChanged);
     widget.mediaPlayer?.addListener(_onPositionChanged);
   }
 
   @override
   void dispose() {
+    _textScrollController.removeListener(_syncGutterScroll);
+    _textController.removeListener(_onTextChanged);
     widget.lyricsState.removeListener(_onStateChanged);
     widget.mediaPlayer?.removeListener(_onPositionChanged);
     _textFocusNode.dispose();
     _textController.dispose();
+    _textScrollController.dispose();
+    _gutterScrollController.dispose();
     super.dispose();
+  }
+
+  void _syncGutterScroll() {
+    if (_gutterScrollController.hasClients) {
+      _gutterScrollController.jumpTo(_textScrollController.offset);
+    }
+  }
+
+  void _onTextChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -91,6 +123,9 @@ class _LyricsEditorState extends State<LyricsEditor> {
         }
       } else {
         // Switching TO Standard Mode
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          widget.lyricsState.cleanUpLegacyPlus();
+        });
         int offset = _textController.selection.baseOffset;
         if (offset >= 0 && widget.lyricsState.document != null) {
           final sel = _getNodeForOffset(offset);
@@ -135,7 +170,8 @@ class _LyricsEditorState extends State<LyricsEditor> {
         final line = doc.lines[i];
         for (int j = 0; j < line.nodes.length; j++) {
           final nodeStr = line.nodes[j].toLrcString();
-          if (offset + nodeStr.length > targetOffset || j == line.nodes.length - 1) {
+          if (offset + nodeStr.length > targetOffset ||
+              j == line.nodes.length - 1) {
             return [i, j];
           }
           offset += nodeStr.length;
@@ -148,15 +184,43 @@ class _LyricsEditorState extends State<LyricsEditor> {
   }
 
   void _onStateChanged() {
-    if (_textController.text != widget.lyricsState.rawText) {
-      _textController.text = widget.lyricsState.rawText;
+    final cleanText = widget.lyricsState.rawText.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    if (_textController.text != cleanText) {
+      _textController.text = cleanText;
     }
+
+    // Auto-scroll to follow active tagging cursor line if tagging is active
+    final ac = widget.lyricsState.activeCursor;
+    if (ac != null) {
+      final lineIdx = ac.lineIndex;
+      if (lineIdx != _lastActiveCursorLine) {
+        _lastActiveCursorLine = lineIdx;
+        if (_itemScrollController.isAttached) {
+          _itemScrollController.scrollTo(
+            index: lineIdx,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            alignment:
+                0.3, // Keeps the active cursor line centered/upper-centered
+          );
+        }
+      }
+    } else {
+      _lastActiveCursorLine = -1;
+    }
+
     setState(() {});
   }
 
   void _onPositionChanged() {
     setState(() {});
-    
+
+    // If tagging mode is active, do NOT scroll based on audio playback time
+    // to avoid layout fights/conflicts with manual scrolling or cursor scrolling.
+    if (widget.lyricsState.activeCursor != null) {
+      return;
+    }
+
     final pos = widget.mediaPlayer?.position;
     final doc = widget.lyricsState.document;
     if (pos != null && doc != null && doc.lines.isNotEmpty) {
@@ -199,25 +263,160 @@ class _LyricsEditorState extends State<LyricsEditor> {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16.0),
+      padding: widget.isTextMode ? EdgeInsets.zero : const EdgeInsets.all(16.0),
       child: widget.isTextMode ? _buildTextMode() : _buildStandardMode(),
     );
   }
 
   // ─── Text Mode ──────────────────────────────────────────────────────────
   Widget _buildTextMode() {
-    return TextField(
-      controller: _textController,
-      focusNode: _textFocusNode,
-      maxLines: null,
-      expands: true,
-      textAlignVertical: TextAlignVertical.top,
-      style: GoogleFonts.robotoMono(fontSize: 13, height: 1.8),
-      decoration: const InputDecoration(
-        border: InputBorder.none,
-        hintText: '在此输入扩展 LRC 歌词...',
+    final text = _textController.text;
+    final lineCount = text.split('\n').length;
+
+    const TextStyle editorTextStyle = TextStyle(
+      fontFamily: 'Consolas',
+      fontFamilyFallback: [
+        'Courier New',
+        'Courier',
+        // --- Windows Japanese Monospaced ---
+        'MS Gothic',
+        'ＭＳ ゴシック',
+        'Yu Gothic',
+        'Meiryo',
+        // --- macOS / iOS Japanese Monospaced ---
+        'Osaka-Mono',
+        'Hiragino Kaku Gothic ProN',
+        // --- Android / CJK generic ---
+        'Noto Sans Mono CJK JP',
+        'Noto Sans Mono CJK SC',
+        'Noto Sans Mono CJK TC',
+        // --- Chinese Fallbacks ---
+        'NSimSun',
+        '新宋体',
+        'PingFang SC',
+        'Microsoft YaHei',
+        '微软雅黑',
+        'monospace',
+      ],
+      fontSize: 14,
+      height: 1.5,
+    );
+
+    // Dynamic gutter width computation based on line digits
+    final double gutterWidth = (lineCount.toString().length * 9.0) + 24.0;
+
+    // Calculate exact visual ruler location at 80 characters using TextPainter
+    final textPainter = TextPainter(
+      text: const TextSpan(text: 'A', style: editorTextStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final double charWidth = textPainter.width;
+    final double rulerOffset = 80 * charWidth + 16.0; // 16.0 matches left padding of text field
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Line Numbers Gutter
+          Container(
+            width: gutterWidth,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            child: Stack(
+              children: [
+                SingleChildScrollView(
+                  controller: _gutterScrollController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(vertical: 12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: List.generate(lineCount, (index) {
+                      return Container(
+                        height: 21.0, // perfect pixel match (14 * 1.5 = 21.0)
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: Text(
+                          '${index + 1}',
+                          style: editorTextStyle.copyWith(
+                            color: Colors.white.withAlpha(80),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+                // Gutter Right Divider
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 1.0,
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Scrollable Editor View
+          Expanded(
+            child: Container(
+              color: Theme.of(context).colorScheme.surface,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: constraints.maxWidth,
+                      ),
+                      child: IntrinsicWidth(
+                        child: Stack(
+                          children: [
+                            // 80-Character Ruler Guide
+                            Positioned(
+                              left: rulerOffset,
+                              top: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: 1.0,
+                                color: Colors.white.withAlpha(15),
+                              ),
+                            ),
+                            // Editor Input Field
+                            TextField(
+                              controller: _textController,
+                              focusNode: _textFocusNode,
+                              scrollController: _textScrollController,
+                              maxLines: null,
+                              keyboardType: TextInputType.multiline,
+                              selectionHeightStyle: ui.BoxHeightStyle.includeLineSpacingMiddle,
+                              selectionWidthStyle: ui.BoxWidthStyle.tight,
+                              style: editorTextStyle.copyWith(
+                                color: Colors.white.withAlpha(220),
+                              ),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(
+                                  vertical: 12.0,
+                                  horizontal: 16.0,
+                                ),
+                                hintText: 'Ciallo～(∠・ω< )⌒☆',
+                                isDense: true,
+                              ),
+                              onChanged: widget.lyricsState.updateFromRawText,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
-      onChanged: widget.lyricsState.updateFromRawText,
     );
   }
 
@@ -227,7 +426,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
     if (doc == null || doc.lines.isEmpty) {
       return Center(
         child: Text(
-          '暂无歌词，请导入 LRC 文件\n或切换至文本模式直接编辑。',
+          'Ciallo～(∠・ω< )⌒☆',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white.withAlpha(100)),
         ),
@@ -235,18 +434,24 @@ class _LyricsEditorState extends State<LyricsEditor> {
     }
 
     return ScrollablePositionedList.builder(
-      itemCount: doc.lines.length,
+      itemCount: doc.lines.length + 1,
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
       itemBuilder: (context, lineIndex) {
+        if (lineIndex == doc.lines.length) {
+          return SizedBox(height: MediaQuery.of(context).size.height * 0.6);
+        }
+
         final line = doc.lines[lineIndex];
         if (line.nodes.isEmpty) return const SizedBox(height: 8);
 
         // Check if line has any visible content
-        bool hasContent = line.nodes.any((n) =>
-            n is LyricRuby ||
-            n is LyricTimeTag ||
-            (n is LyricText && n.text.trim().isNotEmpty));
+        bool hasContent = line.nodes.any(
+          (n) =>
+              n is LyricRuby ||
+              n is LyricTimeTag ||
+              (n is LyricText && n.text.trim().isNotEmpty),
+        );
         if (!hasContent) return const SizedBox(height: 8);
 
         final cells = _buildCharCells(line.nodes, lineIndex);
@@ -293,6 +498,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
               ruby: cells[lastIdx].ruby,
               lineIndex: cells[lastIdx].lineIndex,
               nodeIndex: cells[lastIdx].nodeIndex,
+              tagNodeIndex: cells[lastIdx].tagNodeIndex,
               charOffset: cells[lastIdx].charOffset,
               startTimes: cells[lastIdx].startTimes,
               karaokeStartTime: cells[lastIdx].karaokeStartTime,
@@ -312,14 +518,17 @@ class _LyricsEditorState extends State<LyricsEditor> {
           // Only the first character gets the cursor dot
           final isFirstChar = (ci == 0 && pendingTagNodeIndex != null);
 
-          cells.add(CharCell(
-            text: chars[ci],
-            lineIndex: lineIndex,
-            nodeIndex: pendingTagNodeIndex ?? ni,
-            charOffset: ci,
-            startTimes: isFirstChar ? [currentTime] : [],
-            karaokeStartTime: isFirstChar ? currentTime : null,
-          ));
+          cells.add(
+            CharCell(
+              text: chars[ci],
+              lineIndex: lineIndex,
+              nodeIndex: ni,
+              tagNodeIndex: isFirstChar ? pendingTagNodeIndex : null,
+              charOffset: ci,
+              startTimes: isFirstChar ? [currentTime] : [],
+              karaokeStartTime: isFirstChar ? currentTime : null,
+            ),
+          );
         }
         // After consuming text, clear the pending tag
         pendingTagNodeIndex = null;
@@ -346,18 +555,22 @@ class _LyricsEditorState extends State<LyricsEditor> {
           }
         }
 
-        cells.add(CharCell(
-          text: node.baseText,
-          ruby: internalTexts.join(),
-          lineIndex: lineIndex,
-          nodeIndex: ni,
-          charOffset: 0,
-          startTimes: internalTags.map((t) => _parseTime(t.time)).toList(),
-          karaokeStartTime: internalTags.isNotEmpty ? _parseTime(internalTags.first.time) : null,
-          hasEndTag: hasEndTag,
-          isEndTagUntagged: isEndTagUntagged,
-          endTime: rubyEndTime,
-        ));
+        cells.add(
+          CharCell(
+            text: node.baseText,
+            ruby: internalTexts.join(),
+            lineIndex: lineIndex,
+            nodeIndex: ni,
+            charOffset: 0,
+            startTimes: internalTags.map((t) => _parseTime(t.time)).toList(),
+            karaokeStartTime: internalTags.isNotEmpty
+                ? _parseTime(internalTags.first.time)
+                : null,
+            hasEndTag: hasEndTag,
+            isEndTagUntagged: isEndTagUntagged,
+            endTime: rubyEndTime,
+          ),
+        );
       }
     }
 
@@ -384,6 +597,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
             ruby: cells[i].ruby,
             lineIndex: cells[i].lineIndex,
             nodeIndex: cells[i].nodeIndex,
+            tagNodeIndex: cells[i].tagNodeIndex,
             charOffset: cells[i].charOffset,
             startTimes: cells[i].startTimes,
             karaokeStartTime: cells[i].karaokeStartTime,
@@ -404,7 +618,9 @@ class _LyricsEditorState extends State<LyricsEditor> {
         while (prevIdx >= 0 && cells[prevIdx].startTimes.isEmpty) {
           prevIdx--;
         }
-        if (prevIdx >= 0 && cells[prevIdx].startTimes.isNotEmpty && cells[prevIdx].endTime != null) {
+        if (prevIdx >= 0 &&
+            cells[prevIdx].startTimes.isNotEmpty &&
+            cells[prevIdx].endTime != null) {
           // Count how many chars share this time span
           int spanStart = prevIdx;
           int spanEnd = i;
@@ -421,14 +637,20 @@ class _LyricsEditorState extends State<LyricsEditor> {
           for (int j = spanStart; j <= spanEnd; j++) {
             final charIdx = j - spanStart;
             final cStart = Duration(
-                milliseconds: tStart.inMilliseconds + (spanMs * charIdx ~/ totalChars));
+              milliseconds:
+                  tStart.inMilliseconds + (spanMs * charIdx ~/ totalChars),
+            );
             final cEnd = Duration(
-                milliseconds: tStart.inMilliseconds + (spanMs * (charIdx + 1) ~/ totalChars));
+              milliseconds:
+                  tStart.inMilliseconds +
+                  (spanMs * (charIdx + 1) ~/ totalChars),
+            );
             cells[j] = CharCell(
               text: cells[j].text,
               ruby: cells[j].ruby,
               lineIndex: cells[j].lineIndex,
               nodeIndex: cells[j].nodeIndex,
+              tagNodeIndex: cells[j].tagNodeIndex,
               charOffset: cells[j].charOffset,
               startTimes: cells[j].startTimes,
               karaokeStartTime: cStart,
@@ -466,14 +688,19 @@ class _LyricsEditorState extends State<LyricsEditor> {
     bool isActiveCursorNode = false;
     final ac = widget.lyricsState.activeCursor;
     if (ac != null) {
-      isActiveCursorNode = ac.lineIndex == cell.lineIndex && ac.nodeIndex == cell.nodeIndex;
+      isActiveCursorNode = ac.lineIndex == cell.lineIndex &&
+          (ac.nodeIndex == cell.nodeIndex ||
+              (cell.tagNodeIndex != null && ac.nodeIndex == cell.tagNodeIndex));
     }
 
     final globalStartTime = cell.karaokeStartTime;
 
-    final isSelected = widget.lyricsState.selectionPath != null &&
+    final isSelected =
+        widget.lyricsState.selectionPath != null &&
         widget.lyricsState.selectionPath![0] == cell.lineIndex &&
-        widget.lyricsState.selectionPath![1] == cell.nodeIndex;
+        widget.lyricsState.selectionPath![1] == cell.nodeIndex &&
+        (widget.lyricsState.selectionPath!.length < 3 ||
+            widget.lyricsState.selectionPath![2] == cell.charOffset);
 
     // Karaoke color calculation
     Color charColor = Colors.white.withAlpha(220);
@@ -493,7 +720,12 @@ class _LyricsEditorState extends State<LyricsEditor> {
 
     return GestureDetector(
       onTap: () {
-        widget.lyricsState.setSelection(cell.lineIndex, cell.nodeIndex);
+        widget.lyricsState.setSelection(
+          cell.lineIndex,
+          cell.nodeIndex,
+          cell.charOffset,
+          cell.tagNodeIndex,
+        );
       },
       onDoubleTap: (!isMobile && globalStartTime != null)
           ? () {
@@ -532,7 +764,9 @@ class _LyricsEditorState extends State<LyricsEditor> {
                           cell.ruby!,
                           style: TextStyle(
                             fontSize: 11,
-                            color: isSelected ? cs.primary : Colors.white.withAlpha(140),
+                            color: isSelected
+                                ? cs.primary
+                                : Colors.white.withAlpha(140),
                             height: 1.0,
                             fontWeight: FontWeight.w500,
                           ),
@@ -554,21 +788,29 @@ class _LyricsEditorState extends State<LyricsEditor> {
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     ...List.generate(cell.startTimes.length, (slotIdx) {
-                      final isThisSlotActive = isActiveCursorNode && ac?.slotIndex == slotIdx;
+                      final isThisSlotActive =
+                          isActiveCursorNode && ac?.slotIndex == slotIdx;
                       final isUntagged = cell.startTimes[slotIdx] == null;
-                      
+
                       Color baseColor;
                       if (isThisSlotActive) {
                         baseColor = Colors.amberAccent;
                       } else if (isSelected || isActiveCursorNode) {
-                        baseColor = isUntagged ? Colors.grey.shade400 : cs.primary;
+                        baseColor = isUntagged
+                            ? Colors.white.withAlpha(60)
+                            : cs.primary;
                       } else {
-                        baseColor = isUntagged ? Colors.grey.shade300 : cs.primary.withAlpha(180);
+                        baseColor = isUntagged
+                            ? Colors.white.withAlpha(60)
+                            : cs.primary.withAlpha(180);
                       }
 
                       return GestureDetector(
                         onTap: () => widget.lyricsState.setActiveCursorByTap(
-                            cell.lineIndex, cell.nodeIndex, slotIdx),
+                          cell.lineIndex,
+                          cell.nodeIndex,
+                          slotIdx,
+                        ),
                         child: Container(
                           margin: const EdgeInsets.only(right: 2),
                           width: 8,
@@ -577,11 +819,13 @@ class _LyricsEditorState extends State<LyricsEditor> {
                             color: baseColor,
                             borderRadius: BorderRadius.circular(2),
                             boxShadow: isThisSlotActive
-                                ? [BoxShadow(
-                                    color: Colors.amberAccent.withAlpha(160),
-                                    blurRadius: 4,
-                                    spreadRadius: 1,
-                                  )]
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.amberAccent.withAlpha(160),
+                                      blurRadius: 4,
+                                      spreadRadius: 1,
+                                    ),
+                                  ]
                                 : null,
                           ),
                         ),
@@ -610,7 +854,16 @@ class _LyricsEditorState extends State<LyricsEditor> {
   }
 
   // ─── Karaoke character with gradient wipe ───────────────────────────────
-  Widget _buildKaraokeChar(CharCell cell, Color charColor, Duration currentPos) {
+  Widget _buildKaraokeChar(
+    CharCell cell,
+    Color charColor,
+    Duration currentPos,
+  ) {
+    final isSelected = widget.lyricsState.selectionPath != null &&
+        widget.lyricsState.selectionPath![0] == cell.lineIndex &&
+        widget.lyricsState.selectionPath![1] == cell.nodeIndex &&
+        (widget.lyricsState.selectionPath!.length < 3 ||
+            widget.lyricsState.selectionPath![2] == cell.charOffset);
     final isPlaying = widget.mediaPlayer?.isPlaying == true;
     final globalStartTime = cell.karaokeStartTime;
 
@@ -620,22 +873,33 @@ class _LyricsEditorState extends State<LyricsEditor> {
         cell.endTime != null &&
         currentPos >= globalStartTime &&
         currentPos < cell.endTime!) {
-      final totalMs = cell.endTime!.inMilliseconds - globalStartTime.inMilliseconds;
-      final elapsed = currentPos.inMilliseconds - globalStartTime.inMilliseconds;
+      final totalMs =
+          cell.endTime!.inMilliseconds - globalStartTime.inMilliseconds;
+      final elapsed =
+          currentPos.inMilliseconds - globalStartTime.inMilliseconds;
       final progress = totalMs > 0 ? (elapsed / totalMs).clamp(0.0, 1.0) : 0.0;
 
       final cs = Theme.of(context).colorScheme;
       return ShaderMask(
         shaderCallback: (bounds) {
           return LinearGradient(
-            colors: [cs.primary, cs.primary, Colors.white.withAlpha(220), Colors.white.withAlpha(220)],
+            colors: [
+              cs.primary,
+              cs.primary,
+              Colors.white.withAlpha(220),
+              Colors.white.withAlpha(220),
+            ],
             stops: [0.0, progress, progress, 1.0],
           ).createShader(bounds);
         },
         blendMode: BlendMode.srcIn,
         child: Text(
           cell.text,
-          style: const TextStyle(fontSize: 24, height: 1.1, color: Colors.white),
+          style: const TextStyle(
+            fontSize: 24,
+            height: 1.1,
+            color: Colors.white,
+          ),
         ),
       );
     }
@@ -646,12 +910,8 @@ class _LyricsEditorState extends State<LyricsEditor> {
         fontSize: 24,
         height: 1.1,
         color: charColor,
-        fontWeight: (widget.lyricsState.selectionPath != null &&
-                widget.lyricsState.selectionPath![1] == cell.nodeIndex)
-            ? FontWeight.w600
-            : FontWeight.normal,
+        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
       ),
     );
   }
-
 }

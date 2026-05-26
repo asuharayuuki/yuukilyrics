@@ -73,260 +73,185 @@ class _ToolbarAreaState extends State<ToolbarArea> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-          // Main toolbar row
-          SizedBox(
-            height: 56,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  // Play / Pause
-                  _buildToolBtn(
-                    tooltip: 'Play / Pause',
-                    icon: ListenableBuilder(
-                      listenable: widget.mediaPlayer,
-                      builder: (_, child) => Icon(
-                        widget.mediaPlayer.isPlaying
-                            ? Icons.pause
-                            : Icons.play_arrow,
-                      ),
-                    ),
-                    onPressed: widget.mediaPlayer.togglePlayPause,
-                  ),
-
-                  const _Divider(),
-
-                  // Start tagging / Stop
-                  ListenableBuilder(
-                    listenable: widget.lyricsState,
-                    builder: (_, child) {
-                      final isTagging = widget.lyricsState.activeCursor != null;
-                      return _buildToolBtn(
-                        tooltip: isTagging ? 'Stop Tagging' : 'Start Tagging',
-                        icon: Icon(
-                          isTagging
-                              ? Icons.stop_circle_outlined
-                              : Icons.radio_button_checked,
-                        ),
-                        onPressed: isTagging
-                            ? widget.lyricsState.stopTagging
-                            : widget.lyricsState.startTagging,
-                        color: isTagging
-                            ? Colors.redAccent
-                            : colorScheme.primary,
-                      );
-                    },
-                  ),
-
-                  const _Divider(),
-
-                  // Add Cursor
-                  _buildToolBtn(
-                    tooltip: '增加光标 (Add Cursor)',
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: widget.lyricsState.addCursorToSelected,
-                  ),
-
-                  // Remove Cursor
-                  _buildToolBtn(
-                    tooltip: '减少光标 (Remove Cursor)',
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: widget.lyricsState.removeCursorFromSelected,
-                  ),
-
-                  // Merge with next
-                  _buildToolBtn(
-                    tooltip: '合并下一字 (Merge with Next)',
-                    icon: const Icon(Icons.merge_type),
-                    onPressed: widget.lyricsState.mergeSelectedWithNext,
-                  ),
-
-                  // Link Ruby (Merge Kana)
-                  _buildToolBtn(
-                    tooltip: '合并假名 (Link Ruby)',
-                    icon: const Icon(Icons.link),
-                    onPressed: widget.lyricsState.linkRubySegments,
-                  ),
-
-                  // Split
-                  _buildToolBtn(
-                    tooltip: '拆分 (Split Node)',
-                    icon: const Icon(Icons.call_split),
-                    onPressed: widget.lyricsState.splitSelectedNode,
-                  ),
-
-                  // Toggle 10 Tag
-                  _buildToolBtn(
-                    tooltip: '添加/删除 10 标签',
-                    icon: const Icon(Icons.stop),
-                    onPressed: widget.lyricsState.toggleEndTag,
-                  ),
-
-                  const _Divider(),
-
-                  // Auto Ruby & Tag (Combined)
-                  _buildToolBtn(
-                    tooltip: '自动注音与标注 (Auto Ruby & Tag)',
-                    icon: const Icon(Icons.auto_fix_high),
-                    onPressed: () =>
-                        widget.lyricsState.autoRubyAndTagDocument(context),
-                  ),
-
-                  const _Divider(),
-
-                  // Seek backward 1500ms
-                  _buildToolBtn(
-                    tooltip: '后退 1.5s',
-                    icon: const Icon(Icons.fast_rewind),
-                    onPressed: () {
-                      final pos = widget.mediaPlayer.position;
-                      widget.mediaPlayer.seek(
-                        Duration(
-                          milliseconds: (pos.inMilliseconds - 1500).clamp(
-                            0,
-                            double.maxFinite.toInt(),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-                  // Seek forward 1000ms
-                  _buildToolBtn(
-                    tooltip: '前进 1s',
-                    icon: const Icon(Icons.fast_forward),
-                    onPressed: () {
-                      final pos = widget.mediaPlayer.position;
-                      widget.mediaPlayer.seek(
-                        pos + const Duration(milliseconds: 1000),
-                      );
-                    },
-                  ),
-
-                  const SizedBox(width: 16),
-
-                  // Tagging offset indicator
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: Material(
-                      color: colorScheme.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: _showOffsetDialog,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.white12,
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.timer_outlined,
-                                size: 14,
-                                color: widget.lyricsState.taggingOffsetMs != -230
-                                    ? Colors.amberAccent
-                                    : Colors.white54,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${widget.lyricsState.taggingOffsetMs}ms',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  fontFamily: 'monospace',
-                                  color: widget.lyricsState.taggingOffsetMs != -230
-                                      ? Colors.amberAccent
-                                      : Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
+            // Main toolbar row
+            SizedBox(
+              height: 56,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    // Play / Pause
+                    _buildToolBtn(
+                      tooltip: 'Play / Pause',
+                      icon: ListenableBuilder(
+                        listenable: widget.mediaPlayer,
+                        builder: (_, child) => Icon(
+                          widget.mediaPlayer.isPlaying
+                              ? Icons.pause
+                              : Icons.play_arrow,
                         ),
                       ),
+                      onPressed: widget.mediaPlayer.togglePlayPause,
                     ),
-                  ),
 
-                  // Speed indicator / control placeholder
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: ListenableBuilder(
-                      listenable: widget.mediaPlayer,
+                    const _Divider(),
+
+                    // Start tagging / Stop
+                    ListenableBuilder(
+                      listenable: widget.lyricsState,
                       builder: (_, child) {
-                        final isSpeedModified = (widget.mediaPlayer.rate - 1.0).abs() > 0.01;
-                        return Material(
-                          color: colorScheme.surface,
-                          borderRadius: BorderRadius.circular(8),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            onTap: _showSpeedDialog,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: Colors.white12,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.speed,
-                                    size: 14,
-                                    color: isSpeedModified
-                                        ? Colors.amberAccent
-                                        : Colors.white54,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${widget.mediaPlayer.rate.toStringAsFixed(2)}x',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: 'monospace',
-                                      color: isSpeedModified
-                                          ? Colors.amberAccent
-                                          : Colors.white70,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                        final isTagging =
+                            widget.lyricsState.activeCursor != null;
+                        return _buildToolBtn(
+                          tooltip: isTagging ? 'Stop Tagging' : 'Start Tagging',
+                          icon: Icon(
+                            isTagging
+                                ? Icons.stop_circle_outlined
+                                : Icons.radio_button_checked,
+                          ),
+                          onPressed: isTagging
+                              ? widget.lyricsState.stopTagging
+                              : widget.lyricsState.startTagging,
+                          color: isTagging
+                              ? Colors.redAccent
+                              : colorScheme.primary,
+                        );
+                      },
+                    ),
+
+                    const _Divider(),
+
+                    // Add Cursor
+                    _buildToolBtn(
+                      tooltip: '增加光标 (Add Cursor)',
+                      icon: const Icon(Icons.add_circle_outline),
+                      onPressed: widget.lyricsState.addCursorToSelected,
+                    ),
+
+                    // Remove Cursor
+                    _buildToolBtn(
+                      tooltip: '减少光标 (Remove Cursor)',
+                      icon: const Icon(Icons.remove_circle_outline),
+                      onPressed: widget.lyricsState.removeCursorFromSelected,
+                    ),
+
+                    // Merge with next
+                    _buildToolBtn(
+                      tooltip: '合并下一字 (Merge with Next)',
+                      icon: const Icon(Icons.merge_type),
+                      onPressed: widget.lyricsState.mergeSelectedWithNext,
+                    ),
+
+                    // Link Ruby (Merge Kana)
+                    _buildToolBtn(
+                      tooltip: '合并假名 (Link Ruby)',
+                      icon: const Icon(Icons.link),
+                      onPressed: widget.lyricsState.linkRubySegments,
+                    ),
+
+                    // Split
+                    _buildToolBtn(
+                      tooltip: '拆分 (Split Node)',
+                      icon: const Icon(Icons.call_split),
+                      onPressed: widget.lyricsState.splitSelectedNode,
+                    ),
+
+                    // Toggle 10 Tag
+                    _buildToolBtn(
+                      tooltip: '添加/删除 10 标签',
+                      icon: const Icon(Icons.stop),
+                      onPressed: widget.lyricsState.toggleEndTag,
+                    ),
+
+                    const _Divider(),
+
+                    // Auto Ruby & Tag (Combined)
+                    _buildToolBtn(
+                      tooltip: '自动注音与标注 (Auto Ruby & Tag)',
+                      icon: const Icon(Icons.auto_fix_high),
+                      onPressed: () =>
+                          widget.lyricsState.autoRubyAndTagDocument(context),
+                    ),
+
+                    const _Divider(),
+
+                    // Seek backward 1500ms
+                    _buildToolBtn(
+                      tooltip: '后退 1.5s',
+                      icon: const Icon(Icons.fast_rewind),
+                      onPressed: () {
+                        final pos = widget.mediaPlayer.position;
+                        widget.mediaPlayer.seek(
+                          Duration(
+                            milliseconds: (pos.inMilliseconds - 1500).clamp(
+                              0,
+                              double.maxFinite.toInt(),
                             ),
                           ),
                         );
                       },
                     ),
-                  ),
-                ],
+
+                    // Seek forward 1000ms
+                    _buildToolBtn(
+                      tooltip: '前进 1s',
+                      icon: const Icon(Icons.fast_forward),
+                      onPressed: () {
+                        final pos = widget.mediaPlayer.position;
+                        widget.mediaPlayer.seek(
+                          pos + const Duration(milliseconds: 1000),
+                        );
+                      },
+                    ),
+
+                    const _Divider(),
+
+                    // Tagging offset
+                    ListenableBuilder(
+                      listenable: widget.lyricsState,
+                      builder: (_, child) {
+                        final isOffsetModified =
+                            widget.lyricsState.taggingOffsetMs != -230;
+                        return _buildToolBtn(
+                          tooltip: '打轴偏移设置 (Tagging Offset)',
+                          icon: const Icon(Icons.timer_outlined),
+                          onPressed: _showOffsetDialog,
+                          color: isOffsetModified ? colorScheme.primary : null,
+                        );
+                      },
+                    ),
+
+                    // Speed control
+                    ListenableBuilder(
+                      listenable: widget.mediaPlayer,
+                      builder: (_, child) {
+                        final isSpeedModified =
+                            (widget.mediaPlayer.rate - 1.0).abs() > 0.01;
+                        return _buildToolBtn(
+                          tooltip: '播放倍速 (Playback Speed)',
+                          icon: const Icon(Icons.speed),
+                          onPressed: _showSpeedDialog,
+                          color: isSpeedModified ? colorScheme.primary : null,
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          // Inline Ruby editor row (only visible when a Ruby node is selected)
-          AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            child: _showRubyEditor
-                ? _buildRubyEditor(colorScheme)
-                : const SizedBox.shrink(),
-          ),
-        ],
+            // Inline Ruby editor row (only visible when a Ruby node is selected)
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              child: _showRubyEditor
+                  ? _buildRubyEditor(colorScheme)
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildToolBtn({
     required String tooltip,
@@ -357,6 +282,20 @@ class _ToolbarAreaState extends State<ToolbarArea> {
   }
 
   Widget _buildRubyEditor(ColorScheme cs) {
+    final node = widget.lyricsState.getSelectedNode();
+    String label = '読み: ';
+    if (node is LyricRuby) {
+      label = '${node.baseText}: ';
+    } else if (node is LyricText) {
+      final sel = widget.lyricsState.selectionPath;
+      if (sel != null &&
+          sel.length > 2 &&
+          sel[2] >= 0 &&
+          sel[2] < node.text.length) {
+        label = '${node.text[sel[2]]}: ';
+      }
+    }
+
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -368,7 +307,10 @@ class _ToolbarAreaState extends State<ToolbarArea> {
         children: [
           Icon(Icons.edit, size: 16, color: cs.primary),
           const SizedBox(width: 8),
-          const Text('読み: ', style: TextStyle(fontSize: 13)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
           Expanded(
             child: TextField(
               controller: _rubyCtrl,
@@ -408,9 +350,9 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                 ),
                 Slider(
                   value: rate,
-                  min: 0.25,
-                  max: 2.0,
-                  divisions: 7,
+                  min: 0.2,
+                  max: 1.0,
+                  divisions: 8,
                   label: '×${rate.toStringAsFixed(2)}',
                   onChanged: (v) => ss(() => rate = v),
                 ),

@@ -24,9 +24,9 @@ class LrcParser {
       }
       
       // If not a tag or ruby, or parsing failed, it's text.
-      // Find the next '[' or '{'
-      int nextBracket = line.indexOf('[', cursor);
-      int nextBrace = line.indexOf('{', cursor);
+      // Find the next '[' or '{' strictly after the current cursor
+      int nextBracket = line.indexOf('[', cursor + 1);
+      int nextBrace = line.indexOf('{', cursor + 1);
       
       int nextSpec = -1;
       if (nextBracket != -1 && nextBrace != -1) {
@@ -38,10 +38,14 @@ class LrcParser {
       }
 
       if (nextSpec == -1) {
-        nodes.add(LyricText(line.substring(cursor)));
+        if (cursor < line.length) {
+          nodes.add(LyricText(line.substring(cursor)));
+        }
         break;
       } else {
-        nodes.add(LyricText(line.substring(cursor, nextSpec)));
+        if (nextSpec > cursor) {
+          nodes.add(LyricText(line.substring(cursor, nextSpec)));
+        }
         cursor = nextSpec;
       }
     }
@@ -107,7 +111,7 @@ class LrcParser {
         final first = sec.first;
         if (first is LyricTimeTag && first.type != null && first.type != 10) {
            int expected = first.type!;
-           int existing = sec.where((n) => n is LyricTimeTag).length;
+           int existing = sec.whereType<LyricTimeTag>().length;
            if (existing < expected) {
               String fullText = '';
               for (final n in sec) {
