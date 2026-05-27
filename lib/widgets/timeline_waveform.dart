@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 import '../services/waveform_extractor.dart';
 import '../services/media_player_service.dart';
 
@@ -189,10 +191,6 @@ class WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = waveColor
-      ..style = PaintingStyle.fill;
-
     // Draw samples
     final samples = waveformData.samples;
     final totalDurationSecs = waveformData.duration.inMilliseconds / 1000.0;
@@ -201,7 +199,11 @@ class WaveformPainter extends CustomPainter {
     final samplesPerSec = samples.length / totalDurationSecs;
     final pixelPerSample = pixelsPerSecond / samplesPerSec;
 
-    final path = Path();
+    final paint = Paint()
+      ..color = waveColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = pixelPerSample
+      ..strokeCap = StrokeCap.butt;
 
     // We want the current position to be at 'centerOffset'
     // So the starting x coordinate for sample 0 is:
@@ -216,30 +218,27 @@ class WaveformPainter extends CustomPainter {
         .ceil()
         .clamp(0, samples.length);
 
-    path.moveTo(startX + firstVisibleSample * pixelPerSample, size.height / 2);
+    final int visibleCount = lastVisibleSample - firstVisibleSample;
+    if (visibleCount <= 0) return;
+
+    // Use highly optimized Float32List and drawRawPoints (Single GPU Draw Call)
+    // Avoids incredibly expensive CPU Path tessellation on mid-range Androids.
+    final points = Float32List(visibleCount * 4);
+    int pIdx = 0;
+    final double centerY = size.height / 2;
 
     for (int i = firstVisibleSample; i < lastVisibleSample; i++) {
-      double x = startX + i * pixelPerSample;
+      double x = startX + i * pixelPerSample + (pixelPerSample / 2);
       double amp = samples[i]; // 0.0 to 1.0
-      double h = amp * (size.height / 2);
+      double h = amp * centerY;
 
-      // Top half
-      path.lineTo(x, (size.height / 2) - h);
-      path.lineTo(x + pixelPerSample, (size.height / 2) - h);
+      points[pIdx++] = x;
+      points[pIdx++] = centerY - h;
+      points[pIdx++] = x;
+      points[pIdx++] = centerY + h;
     }
 
-    for (int i = lastVisibleSample - 1; i >= firstVisibleSample; i--) {
-      double x = startX + i * pixelPerSample;
-      double amp = samples[i];
-      double h = amp * (size.height / 2);
-
-      // Bottom half
-      path.lineTo(x + pixelPerSample, (size.height / 2) + h);
-      path.lineTo(x, (size.height / 2) + h);
-    }
-
-    path.close();
-    canvas.drawPath(path, paint);
+    canvas.drawRawPoints(ui.PointMode.lines, points, paint);
   }
 
   @override

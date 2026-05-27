@@ -103,7 +103,10 @@ class _LyricsEditorState extends State<LyricsEditor> {
 
   void _onTextChanged() {
     if (mounted) {
-      setState(() {});
+      // Only rebuild if we are in text mode, otherwise standard mode handles its own state
+      if (widget.isTextMode) {
+        setState(() {});
+      }
     }
   }
 
@@ -183,10 +186,19 @@ class _LyricsEditorState extends State<LyricsEditor> {
     return null;
   }
 
+  String _lastRawText = "";
+
   void _onStateChanged() {
     final cleanText = widget.lyricsState.rawText.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     if (_textController.text != cleanText) {
       _textController.text = cleanText;
+    }
+
+    if (_lastRawText != cleanText) {
+      _lastRawText = cleanText;
+      if (mounted && !widget.isTextMode) {
+        setState(() {}); // Rebuild list structure only when text actually changes
+      }
     }
 
     // Auto-scroll to follow active tagging cursor line if tagging is active
@@ -208,13 +220,9 @@ class _LyricsEditorState extends State<LyricsEditor> {
     } else {
       _lastActiveCursorLine = -1;
     }
-
-    setState(() {});
   }
 
   void _onPositionChanged() {
-    setState(() {});
-
     // If tagging mode is active, do NOT scroll based on audio playback time
     // to avoid layout fights/conflicts with manual scrolling or cursor scrolling.
     if (widget.lyricsState.activeCursor != null) {
@@ -442,35 +450,47 @@ class _LyricsEditorState extends State<LyricsEditor> {
           return SizedBox(height: MediaQuery.of(context).size.height * 0.6);
         }
 
-        final line = doc.lines[lineIndex];
-        if (line.nodes.isEmpty) return const SizedBox(height: 8);
+        return ListenableBuilder(
+          listenable: Listenable.merge([
+            widget.lyricsState,
+            if (widget.mediaPlayer != null) widget.mediaPlayer!,
+          ]),
+          builder: (context, _) {
+            final currentDoc = widget.lyricsState.document;
+            if (currentDoc == null || lineIndex >= currentDoc.lines.length) {
+              return const SizedBox(height: 8);
+            }
+            final line = currentDoc.lines[lineIndex];
+            if (line.nodes.isEmpty) return const SizedBox(height: 8);
 
-        // Check if line has any visible content
-        bool hasContent = line.nodes.any(
-          (n) =>
-              n is LyricRuby ||
-              n is LyricTimeTag ||
-              (n is LyricText && n.text.trim().isNotEmpty),
-        );
-        if (!hasContent) return const SizedBox(height: 8);
+            // Check if line has any visible content
+            bool hasContent = line.nodes.any(
+              (n) =>
+                  n is LyricRuby ||
+                  n is LyricTimeTag ||
+                  (n is LyricText && n.text.trim().isNotEmpty),
+            );
+            if (!hasContent) return const SizedBox(height: 8);
 
-        final cells = _buildCharCells(line.nodes, lineIndex);
-        if (cells.isEmpty) return const SizedBox(height: 8);
+            final cells = _buildCharCells(line.nodes, lineIndex);
+            if (cells.isEmpty) return const SizedBox(height: 8);
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 4.0),
-          child: Row(
-            children: [
-              Flexible(
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.end,
-                  spacing: 0,
-                  runSpacing: 10.0,
-                  children: cells.map(_buildCharCell).toList(),
-                ),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 4.0),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.end,
+                      spacing: 0,
+                      runSpacing: 10.0,
+                      children: cells.map(_buildCharCell).toList(),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
