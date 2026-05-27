@@ -95,6 +95,7 @@ class AssExporter {
 
     String c = _colorToAss(settings.primaryColor);
     int fs = settings.fontSize;
+    String fn = settings.fontName;
 
     int outW = (fs * 7 / 75).round();
     int rubyFs = (fs * 36 / 75).round();
@@ -108,19 +109,19 @@ class AssExporter {
       'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     );
     sb.writeln(
-      'Style: DefaultUnsung,Kosugi Maru,$fs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
+      'Style: DefaultUnsung,$fn,$fs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: DefaultSung,Kosugi Maru,$fs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
+      'Style: DefaultSung,$fn,$fs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: RubyUnsung,Kosugi Maru,$rubyFs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyOut,0,5,0,0,0,1',
+      'Style: RubyUnsung,$fn,$rubyFs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyOut,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: RubySung,Kosugi Maru,$rubyFs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyOut,0,5,0,0,0,1',
+      'Style: RubySung,$fn,$rubyFs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyOut,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: Interlude,Kosugi Maru,$fs,$c,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
+      'Style: Interlude,$fn,$fs,$c,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
     );
 
     sb.writeln('');

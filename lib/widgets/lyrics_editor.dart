@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:flutter/rendering.dart';
 import '../services/lyrics_state_service.dart';
 import '../services/media_player_service.dart';
 import '../models/lyric_ast.dart';
@@ -57,9 +57,8 @@ class LyricsEditor extends StatefulWidget {
 class _LyricsEditorState extends State<LyricsEditor> {
   late LrcSyntaxController _textController;
   late FocusNode _textFocusNode;
-  final ItemScrollController _itemScrollController = ItemScrollController();
-  final ItemPositionsListener _itemPositionsListener =
-      ItemPositionsListener.create();
+  final ScrollController _scrollController = ScrollController();
+  final Map<int, GlobalKey> _lineKeys = {};
   int _currentActiveLine = -1;
   int _lastActiveCursorLine = -1;
 
@@ -135,9 +134,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
           if (sel != null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               widget.lyricsState.setSelection(sel[0], sel[1]);
-              if (_itemScrollController.isAttached) {
-                _itemScrollController.jumpTo(index: sel[0], alignment: 0.3);
-              }
+              _scrollToLine(sel[0], 0.3);
             });
           }
         }
@@ -207,15 +204,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
       final lineIdx = ac.lineIndex;
       if (lineIdx != _lastActiveCursorLine) {
         _lastActiveCursorLine = lineIdx;
-        if (_itemScrollController.isAttached) {
-          _itemScrollController.scrollTo(
-            index: lineIdx,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            alignment:
-                0.3, // Keeps the active cursor line centered/upper-centered
-          );
-        }
+        _scrollToLine(lineIdx, 0.3);
       }
     } else {
       _lastActiveCursorLine = -1;
@@ -242,16 +231,53 @@ class _LyricsEditorState extends State<LyricsEditor> {
       }
       if (newActiveLine != -1 && newActiveLine != _currentActiveLine) {
         _currentActiveLine = newActiveLine;
-        if (_itemScrollController.isAttached) {
-          _itemScrollController.scrollTo(
-            index: newActiveLine,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            alignment: 0.1, // Near the top, approx 2nd line
-          );
-        }
+        _scrollToLine(newActiveLine, 0.1);
       }
     }
+  }
+
+  void _scrollToLine(int lineIdx, double targetAlignment) {
+    if (!_scrollController.hasClients) return;
+
+    final key = _lineKeys[lineIdx];
+    final context = key?.currentContext;
+    
+    if (context != null) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box != null) {
+        final viewport = RenderAbstractViewport.of(box);
+        final targetOffset = viewport.getOffsetToReveal(box, 0.0).offset;
+        final viewportHeight = _scrollController.position.viewportDimension;
+        
+        // 直接让当前行出现在视图上部 (targetAlignment，如 30%)
+        double desiredScroll = targetOffset - (viewportHeight * targetAlignment);
+        
+        // 限制滚动边界：顶部钉死在0，底部钉死在 maxScrollExtent，不再反弹
+        desiredScroll = desiredScroll.clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        );
+        
+        _scrollController.animateTo(
+          desiredScroll,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        );
+        return;
+      }
+    }
+    
+    // 降级：如果跳到了视野外尚未构建的行，按照平均高度估算并滚动
+    double estimatedScroll = lineIdx * 60.0;
+    estimatedScroll = estimatedScroll.clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      estimatedScroll,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Duration? _getLineStartTime(LyricLine line) {
@@ -441,16 +467,15 @@ class _LyricsEditorState extends State<LyricsEditor> {
       );
     }
 
-    return ScrollablePositionedList.builder(
-      itemCount: doc.lines.length + 1,
-      itemScrollController: _itemScrollController,
-      itemPositionsListener: _itemPositionsListener,
+    return ListView.builder(
+      itemCount: doc.lines.length,
+      padding: EdgeInsets.zero,
+      controller: _scrollController,
       itemBuilder: (context, lineIndex) {
-        if (lineIndex == doc.lines.length) {
-          return SizedBox(height: MediaQuery.of(context).size.height * 0.6);
-        }
+        final key = _lineKeys.putIfAbsent(lineIndex, () => GlobalKey());
 
         return ListenableBuilder(
+          key: key,
           listenable: Listenable.merge([
             widget.lyricsState,
             if (widget.mediaPlayer != null) widget.mediaPlayer!,
