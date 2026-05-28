@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../widgets/ass_export_dialog.dart';
 import '../services/ass_exporter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -237,9 +238,93 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  void _showAboutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              const Text(
+                'yuukilyrics',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '© 2026 asuharayuuki\nLicensed under the GNU General Public License v3.0',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+              const SizedBox(height: 24),
+              TextButton.icon(
+                onPressed: () async {
+                  final url = Uri.parse('https://space.bilibili.com/53133362');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.live_tv),
+                label: const Text('bilibili'),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  final url = Uri.parse(
+                    'https://github.com/asuharayuuki/yuukilyrics',
+                  );
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.code),
+                label: const Text('GitHub'),
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  showLicensePage(context: context);
+                },
+                icon: const Icon(Icons.description),
+                label: const Text('Licenses'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: NavigationDrawer(
+        selectedIndex: null,
+        onDestinationSelected: (int index) {
+          if (index == 0) {
+            Navigator.pop(context); // close drawer
+            _showAboutDialog(context);
+          }
+        },
+        children: const [
+          Padding(
+            padding: EdgeInsets.fromLTRB(28, 24, 28, 16),
+            child: Text(
+              'yuukilyrics',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+          NavigationDrawerDestination(
+            icon: Icon(Icons.info_outline),
+            label: Text('About'),
+          ),
+        ],
+      ),
       appBar: AppBar(
         title: const Text(
           'yuukilyrics',
@@ -255,48 +340,51 @@ class _MainScreenState extends State<MainScreen> {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            )
-          else
-            IconButton(
-              tooltip: 'Open Media',
-              onPressed: _openMedia,
-              icon: const Icon(Icons.music_note),
             ),
-          IconButton(
-            tooltip: 'Open LRC',
-            onPressed: _openLrc,
-            icon: const Icon(Icons.description),
-          ),
-          PopupMenuButton<String>(
-            tooltip: '导出...',
-            icon: Icon(
-              Platform.isAndroid || Platform.isIOS
-                  ? Icons.share
-                  : Icons.save_alt,
-            ),
-            onSelected: (value) {
-              if (value == 'txt') {
-                _exportLrc();
-              } else if (value == 'ass') {
-                _exportAss();
-              }
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              const PopupMenuItem<String>(
-                value: 'txt',
-                child: ListTile(
-                  leading: Icon(Icons.text_snippet),
-                  title: Text('导出 LRC 文本'),
-                  contentPadding: EdgeInsets.zero,
-                ),
+          MenuAnchor(
+            builder:
+                (
+                  BuildContext context,
+                  MenuController controller,
+                  Widget? child,
+                ) {
+                  return IconButton(
+                    tooltip: 'Files',
+                    icon: const Icon(Icons.file_open),
+                    onPressed: () {
+                      if (controller.isOpen) {
+                        controller.close();
+                      } else {
+                        controller.open();
+                      }
+                    },
+                  );
+                },
+            menuChildren: [
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.audio_file),
+                onPressed: _isLoadingMedia
+                    ? null
+                    : () {
+                        if (!_isLoadingMedia) _openMedia();
+                      },
+                child: const Text('Open Media'),
               ),
-              const PopupMenuItem<String>(
-                value: 'ass',
-                child: ListTile(
-                  leading: Icon(Icons.subtitles),
-                  title: Text('导出高级 ASS 字幕'),
-                  contentPadding: EdgeInsets.zero,
-                ),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.description),
+                onPressed: _openLrc,
+                child: const Text('Open LRC'),
+              ),
+              const Divider(),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.note),
+                onPressed: _exportLrc,
+                child: const Text('Export LRC'),
+              ),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.subtitles),
+                onPressed: _exportAss,
+                child: const Text('Export ASS'),
               ),
             ],
           ),

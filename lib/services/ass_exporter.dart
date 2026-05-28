@@ -545,7 +545,7 @@ class AssExporter {
 
     final double centerX = playResX / 2;
     final double maxW = block.maxWidth;
-    final double visualGap = settings.fontSize * 4.0;
+    final double visualGap = settings.fontSize * settings.visualGapMultiplier;
     final double boxLeft = centerX - maxW / 2 - visualGap / 2;
     final double boxRight = centerX + maxW / 2 + visualGap / 2;
 

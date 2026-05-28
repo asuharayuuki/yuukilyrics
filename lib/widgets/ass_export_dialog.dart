@@ -8,6 +8,7 @@ class AssExportSettings {
   final int fontSize;
   final AssPagingMode pagingMode;
   final int interludeThresholdSeconds;
+  final double visualGapMultiplier;
 
   AssExportSettings({
     required this.fontName,
@@ -15,6 +16,7 @@ class AssExportSettings {
     required this.fontSize,
     required this.pagingMode,
     required this.interludeThresholdSeconds,
+    required this.visualGapMultiplier,
   });
 }
 
@@ -30,6 +32,7 @@ class _AssExportDialogState extends State<AssExportDialog> {
   double _fontSize = 75.0;
   AssPagingMode _pagingMode = AssPagingMode.auto2Lines;
   double _interludeThreshold = 10.0;
+  double _visualGapMultiplier = 4.0;
   late TextEditingController _fontController;
 
   final List<Color> _presetColors = [
@@ -210,6 +213,20 @@ class _AssExportDialogState extends State<AssExportDialog> {
               label: '${_interludeThreshold.toInt()}s',
               onChanged: (val) => setState(() => _interludeThreshold = val),
             ),
+            const SizedBox(height: 16),
+            Text('同行字距 (Visual Gap): ${_visualGapMultiplier.toStringAsFixed(1)}x'),
+            const Text(
+              '调整双行/空行模式下的字间视觉间隙',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            Slider(
+              value: _visualGapMultiplier,
+              min: 0.0,
+              max: 10.0,
+              divisions: 20,
+              label: '${_visualGapMultiplier.toStringAsFixed(1)}x',
+              onChanged: (val) => setState(() => _visualGapMultiplier = val),
+            ),
           ],
         ),
       ),
@@ -228,6 +245,7 @@ class _AssExportDialogState extends State<AssExportDialog> {
               fontSize: _fontSize.toInt(),
               pagingMode: _pagingMode,
               interludeThresholdSeconds: _interludeThreshold.toInt(),
+              visualGapMultiplier: _visualGapMultiplier,
             );
             Navigator.of(context).pop(settings);
           },
