@@ -10,6 +10,8 @@ class AssLineData {
   final double width;
   final Duration startTime;
   final Duration endTime;
+  final Map<LyricNode, Duration> nodeStartTimes;
+  final Map<LyricNode, Duration> nodeEndTimes;
 
   AssLineData({
     required this.astLine,
@@ -18,6 +20,8 @@ class AssLineData {
     required this.width,
     required this.startTime,
     required this.endTime,
+    required this.nodeStartTimes,
+    required this.nodeEndTimes,
   });
 }
 
@@ -244,13 +248,29 @@ class AssExporter {
     return fallback;
   }
 
+  static double _getRubyNodeWidth(LyricRuby node, double fs, double spacing) {
+    double baseW = _getCharWidth(node.baseText, fs, spacing);
+    
+    double rubyFs = fs * 36 / 75;
+    double rubySpacing = (rubyFs * 12 / 75).roundToDouble();
+    double rubyW = 0;
+    
+    for (var rNode in node.rubyNodes) {
+      if (rNode is LyricText && rNode.text != '＋') {
+        rubyW += _getCharWidth(rNode.text, rubyFs, rubySpacing);
+      }
+    }
+    
+    return baseW > rubyW ? baseW : rubyW;
+  }
+
   static double _getLineWidth(LyricLine line, double fs, double spacing) {
     double w = 0;
     for (var node in line.nodes) {
       if (node is LyricText) {
         w += _getCharWidth(node.text, fs, spacing);
       } else if (node is LyricRuby) {
-        w += _getCharWidth(node.baseText, fs, spacing);
+        w += _getRubyNodeWidth(node, fs, spacing);
       }
     }
     return w;
@@ -289,6 +309,66 @@ class AssExporter {
       double lineSpacingVal = (fs * 12 / 75).roundToDouble();
       double width = _getLineWidth(line, fs, lineSpacingVal);
 
+      Map<LyricNode, Duration> nodeStartTimes = {};
+      Map<LyricNode, Duration> nodeEndTimes = {};
+      
+      List<dynamic> timeElements = [];
+      for (int i = 0; i < line.nodes.length; i++) {
+        var node = line.nodes[i];
+        if (node is LyricTimeTag && node.time.isNotEmpty) {
+          timeElements.add(_parseTime(node.time));
+        } else if (node is LyricRuby) {
+          for (var rNode in node.rubyNodes) {
+            if (rNode is LyricTimeTag && rNode.time.isNotEmpty) {
+              timeElements.add(_parseTime(rNode.time));
+            }
+          }
+          double w = _getRubyNodeWidth(node, fs, lineSpacingVal);
+          timeElements.add(_Atom(node, null, w, Duration.zero, Duration.zero, 10, 0));
+        } else if (node is LyricText) {
+          double w = _getCharWidth(node.text, fs, lineSpacingVal);
+          timeElements.add(_Atom(node, null, w, Duration.zero, Duration.zero, 10, 0));
+        }
+      }
+
+      Duration chunkTime = startTime;
+      List<_Atom> currentChunk = [];
+      for (var el in timeElements) {
+        if (el is Duration) {
+          if (currentChunk.isNotEmpty) {
+            int totalMs = (el - chunkTime).inMilliseconds;
+            if (totalMs < 0) totalMs = 0;
+            double totalW = 0;
+            for (var a in currentChunk) totalW += a.width;
+            
+            for (var a in currentChunk) {
+              int ms = 0;
+              if (totalW > 0) ms = (totalMs * (a.width / totalW)).round();
+              nodeStartTimes[a.originalNode] = chunkTime;
+              chunkTime += Duration(milliseconds: ms);
+              nodeEndTimes[a.originalNode] = chunkTime;
+            }
+            currentChunk.clear();
+          }
+          chunkTime = el;
+        } else if (el is _Atom) {
+          currentChunk.add(el);
+        }
+      }
+      if (currentChunk.isNotEmpty) {
+        int totalMs = (endTime - chunkTime).inMilliseconds;
+        if (totalMs < 0) totalMs = 0;
+        double totalW = 0;
+        for (var a in currentChunk) totalW += a.width;
+        for (var a in currentChunk) {
+          int ms = 0;
+          if (totalW > 0) ms = (totalMs * (a.width / totalW)).round();
+          nodeStartTimes[a.originalNode] = chunkTime;
+          chunkTime += Duration(milliseconds: ms);
+          nodeEndTimes[a.originalNode] = chunkTime;
+        }
+      }
+
       List<List<LyricNode>> rows = [];
       List<double> rowWidths = [];
 
@@ -296,70 +376,21 @@ class AssExporter {
         rows.add(line.nodes);
         rowWidths.add(width);
       } else {
-        List<_Atom> atoms = [];
-        Duration currentTagTime = startTime;
-        double currentAccW = 0;
-
+        List<dynamic> elements = [];
         for (int i = 0; i < line.nodes.length; i++) {
           var node = line.nodes[i];
           if (node is LyricTimeTag && node.time.isNotEmpty) {
-            currentTagTime = _parseTime(node.time);
-            atoms.add(
-              _Atom(
-                node,
-                null,
-                0,
-                currentTagTime,
-                currentTagTime,
-                0,
-                currentAccW,
-              ),
-            );
-          } else if (node is LyricTimeTag) {
-            atoms.add(
-              _Atom(
-                node,
-                null,
-                0,
-                currentTagTime,
-                currentTagTime,
-                0,
-                currentAccW,
-              ),
-            );
+            elements.add(_parseTime(node.time));
           } else if (node is LyricRuby) {
-            Duration nextTagTime = _findNextTimeTagAcrossRows(
-              [line.nodes],
-              0,
-              i + 1,
-              endTime,
-            );
-            double w = _getCharWidth(node.baseText, fs, lineSpacingVal);
-            currentAccW += w;
-            atoms.add(
-              _Atom(
-                node,
-                null,
-                w,
-                currentTagTime,
-                nextTagTime,
-                10,
-                currentAccW,
-              ),
-            );
+            for (var rNode in node.rubyNodes) {
+              if (rNode is LyricTimeTag && rNode.time.isNotEmpty) {
+                elements.add(_parseTime(rNode.time));
+              }
+            }
+            double w = _getRubyNodeWidth(node, fs, lineSpacingVal);
+            elements.add(_Atom(node, null, w, Duration.zero, Duration.zero, 10, 0));
           } else if (node is LyricText) {
-            Duration nextTagTime = _findNextTimeTagAcrossRows(
-              [line.nodes],
-              0,
-              i + 1,
-              endTime,
-            );
             String text = node.text;
-            double totalTextW = _getCharWidth(text, fs, lineSpacingVal);
-            int totalMs = (nextTagTime - currentTagTime).inMilliseconds;
-
-            double accumulatedTextW = 0;
-
             List<String> clusters = [];
             for (int c = 0; c < text.length; c++) {
               String char = text[c];
@@ -369,38 +400,89 @@ class AssExporter {
                 clusters.add(char);
               }
             }
-
             for (int c = 0; c < clusters.length; c++) {
               String cluster = clusters[c];
               double w = _getCharWidth(cluster, fs, lineSpacingVal);
-              int ms = 0;
-              if (totalTextW > 0)
-                ms = (totalMs * (accumulatedTextW / totalTextW)).round();
-              Duration interpolatedTime =
-                  currentTagTime + Duration(milliseconds: ms);
-
-              currentAccW += w;
-              accumulatedTextW += w;
-
               int cost = 20;
               if (c == clusters.length - 1)
                 cost = 10;
               else if (cluster.endsWith(' ') || cluster.endsWith('　'))
                 cost = 0;
-
-              atoms.add(
-                _Atom(
-                  node,
-                  cluster,
-                  w,
-                  interpolatedTime,
-                  nextTagTime,
-                  cost,
-                  currentAccW,
-                ),
-              );
+              
+              elements.add(_Atom(node, cluster, w, Duration.zero, Duration.zero, cost, 0));
             }
           }
+        }
+
+        List<_Atom> atoms = [];
+        Duration currentTagTime = startTime;
+        double currentAccW = 0;
+        List<_Atom> currentChunkAtoms = [];
+        
+        for (var el in elements) {
+          if (el is Duration) {
+            if (currentChunkAtoms.isNotEmpty) {
+              Duration endTagTime = el;
+              int totalMs = (endTagTime - currentTagTime).inMilliseconds;
+              if (totalMs < 0) totalMs = 0;
+              
+              double chunkTotalW = 0;
+              for (var a in currentChunkAtoms) chunkTotalW += a.width;
+              
+              for (var a in currentChunkAtoms) {
+                int ms = 0;
+                if (chunkTotalW > 0) {
+                  ms = (totalMs * (a.width / chunkTotalW)).round();
+                }
+                Duration start = currentTagTime;
+                currentTagTime += Duration(milliseconds: ms);
+                
+                currentAccW += a.width;
+                atoms.add(_Atom(
+                  a.originalNode,
+                  a.textChar,
+                  a.width,
+                  start,
+                  currentTagTime,
+                  a.cost,
+                  currentAccW,
+                ));
+              }
+              currentChunkAtoms.clear();
+            }
+            currentTagTime = el;
+          } else if (el is _Atom) {
+            currentChunkAtoms.add(el);
+          }
+        }
+        
+        if (currentChunkAtoms.isNotEmpty) {
+            Duration endTagTime = endTime;
+            int totalMs = (endTagTime - currentTagTime).inMilliseconds;
+            if (totalMs < 0) totalMs = 0;
+            
+            double chunkTotalW = 0;
+            for (var a in currentChunkAtoms) chunkTotalW += a.width;
+            
+            for (var a in currentChunkAtoms) {
+              int ms = 0;
+              if (chunkTotalW > 0) {
+                ms = (totalMs * (a.width / chunkTotalW)).round();
+              }
+              Duration start = currentTagTime;
+              currentTagTime += Duration(milliseconds: ms);
+              
+              currentAccW += a.width;
+              atoms.add(_Atom(
+                a.originalNode,
+                a.textChar,
+                a.width,
+                start,
+                currentTagTime,
+                a.cost,
+                currentAccW,
+              ));
+            }
         }
 
         List<List<_Atom>> rowAtoms = [];
@@ -464,6 +546,8 @@ class AssExporter {
           var rAtoms = rowAtoms[r];
           List<LyricNode> row = [];
           String currentText = '';
+          Duration? currentTextStart;
+          Duration? currentTextEnd;
 
           if (r > 0 && rAtoms.isNotEmpty && rAtoms[0].textChar != null) {
             row.add(LyricTimeTag(time: _formatTime(rAtoms[0].activeTime)));
@@ -476,17 +560,29 @@ class AssExporter {
           for (int i = 0; i < rAtoms.length; i++) {
             var atom = rAtoms[i];
             if (atom.textChar != null) {
+              if (currentText.isEmpty) {
+                currentTextStart = atom.activeTime;
+              }
               currentText += atom.textChar!;
+              currentTextEnd = atom.nextTime;
             } else {
               if (currentText.isNotEmpty) {
-                row.add(LyricText(currentText));
+                var newTextNode = LyricText(currentText);
+                row.add(newTextNode);
+                nodeStartTimes[newTextNode] = currentTextStart!;
+                nodeEndTimes[newTextNode] = currentTextEnd!;
                 currentText = '';
+                currentTextStart = null;
+                currentTextEnd = null;
               }
               row.add(atom.originalNode);
             }
           }
           if (currentText.isNotEmpty) {
-            row.add(LyricText(currentText));
+            var newTextNode = LyricText(currentText);
+            row.add(newTextNode);
+            nodeStartTimes[newTextNode] = currentTextStart!;
+            nodeEndTimes[newTextNode] = currentTextEnd!;
           }
 
           rows.add(row);
@@ -506,6 +602,8 @@ class AssExporter {
         width: width,
         startTime: startTime,
         endTime: endTime,
+        nodeStartTimes: nodeStartTimes,
+        nodeEndTimes: nodeEndTimes,
       );
 
       if (currentBlock.isNotEmpty) {
@@ -713,18 +811,15 @@ class AssExporter {
         if (node is LyricTimeTag && node.time.isNotEmpty) {
           currentTagTime = _parseTime(node.time);
         } else if (node is LyricText || node is LyricRuby) {
-          Duration nextTagTime = _findNextTimeTagAcrossRows(
-            lineData.rows,
-            r,
-            i + 1,
-            lineData.endTime,
-          );
+          Duration activeTime = lineData.nodeStartTimes[node] ?? currentTagTime;
+          Duration nextTagTime = lineData.nodeEndTimes[node] ?? currentTagTime;
+          currentTagTime = nextTagTime;
 
           double w = 0;
           if (node is LyricText) {
             w = _getCharWidth(node.text, fs, spacing);
           } else if (node is LyricRuby) {
-            w = _getCharWidth(node.baseText, fs, spacing);
+            w = _getRubyNodeWidth(node, fs, spacing);
           }
 
           bool isLastNode = true;
@@ -753,7 +848,7 @@ class AssExporter {
               'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})}${node.text}',
             );
 
-            int tStart = (currentTagTime - displayStart).inMilliseconds;
+            int tStart = (activeTime - displayStart).inMilliseconds;
             int tEnd = (nextTagTime - displayStart).inMilliseconds;
             _writeSyllableClip(
               sb: sb,
@@ -791,26 +886,15 @@ class AssExporter {
               }
             }
 
-            String scaleTag = '';
-            if (rw > w && rw > 0) {
-              double scale = (w / rw) * 100;
-              scaleTag = '\\fscx${scale.toStringAsFixed(1)}';
-            }
-
             double adjustedRubyCx = cx + rubySpacing / 2;
             String rubyUnsungTags =
-                '{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})';
-            if (scaleTag.isNotEmpty) rubyUnsungTags += scaleTag;
-            rubyUnsungTags += '}';
+                '{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})}';
             sb.writeln(
               'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,$rubyUnsungTags$rawRubyText',
             );
 
-            Duration rubyCurrentTime = currentTagTime;
+            Duration rubyCurrentTime = activeTime;
             double currentRubyX = cx - rw / 2;
-            if (rw > w && rw > 0) {
-              currentRubyX = cx - w / 2;
-            }
 
             double accumulatedRw = 0;
 
@@ -831,15 +915,11 @@ class AssExporter {
                 }
                 if (!found) rNextTime = nextTagTime;
 
-                double unscaledRSyllableW = _getCharWidth(
+                double rSyllableW = _getCharWidth(
                   rNode.text,
                   rubyFs,
                   rubySpacing,
                 );
-                double rSyllableW = unscaledRSyllableW;
-                if (rw > w && rw > 0) {
-                  rSyllableW = rSyllableW * (w / rw);
-                }
 
                 int rStart = (rubyCurrentTime - displayStart).inMilliseconds;
                 int rEnd = (rNextTime - displayStart).inMilliseconds;
@@ -870,10 +950,9 @@ class AssExporter {
                   displayStart: displayStart,
                   displayEnd: displayEnd,
                   fs: fs,
-                  extraTags: scaleTag,
                 );
 
-                double percentage = (rw > 0) ? (unscaledRSyllableW / rw) : 1.0;
+                double percentage = (rw > 0) ? (rSyllableW / rw) : 1.0;
                 double sliceW = w * percentage;
                 double sliceX =
                     currentX + ((rw > 0) ? w * (accumulatedRw / rw) : 0);
@@ -898,7 +977,7 @@ class AssExporter {
                 );
 
                 currentRubyX += rSyllableW;
-                accumulatedRw += unscaledRSyllableW;
+                accumulatedRw += rSyllableW;
               }
             }
           }
