@@ -228,6 +228,26 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                       },
                     ),
 
+                    // Global time shift
+                    ListenableBuilder(
+                      listenable: widget.lyricsState,
+                      builder: (_, child) {
+                        final isShiftMode = widget.lyricsState.isGlobalTimeShiftMode;
+                        return _buildToolBtn(
+                          tooltip: isShiftMode ? '確定 (Apply Shift)' : '時間轴全体调整 (Global Time Shift)',
+                          icon: Icon(isShiftMode ? Icons.check : Icons.compare_arrows),
+                          color: isShiftMode ? Colors.orange : null,
+                          onPressed: () {
+                            if (!isShiftMode) {
+                              // Entering mode: pause playback
+                              widget.mediaPlayer.pause();
+                            }
+                            widget.lyricsState.toggleGlobalTimeShiftMode(widget.mediaPlayer.position);
+                          },
+                        );
+                      },
+                    ),
+
                     // Speed control
                     ListenableBuilder(
                       listenable: widget.mediaPlayer,
@@ -444,6 +464,8 @@ class _ToolbarAreaState extends State<ToolbarArea> {
       },
     );
   }
+
+
 }
 
 class _Divider extends StatelessWidget {

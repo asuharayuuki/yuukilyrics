@@ -797,14 +797,24 @@ class _LyricsEditorState extends State<LyricsEditor> {
       child: GestureDetector(
         onDoubleTap: (!isMobile && globalStartTime != null)
             ? () {
+                final wasPlaying = widget.mediaPlayer?.isPlaying ?? false;
                 widget.mediaPlayer?.seek(globalStartTime);
-                widget.mediaPlayer?.play();
+                if (wasPlaying) {
+                  widget.mediaPlayer?.play();
+                } else {
+                  widget.mediaPlayer?.pause();
+                }
               }
             : null,
         onLongPress: (globalStartTime != null)
             ? () {
+                final wasPlaying = widget.mediaPlayer?.isPlaying ?? false;
                 widget.mediaPlayer?.seek(globalStartTime);
-                widget.mediaPlayer?.play();
+                if (wasPlaying) {
+                  widget.mediaPlayer?.play();
+                } else {
+                  widget.mediaPlayer?.pause();
+                }
               }
             : null,
       child: Container(

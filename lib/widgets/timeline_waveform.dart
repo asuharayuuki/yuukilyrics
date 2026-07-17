@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../services/waveform_extractor.dart';
 import '../services/media_player_service.dart';
+import '../services/lyrics_state_service.dart';
 
 class TimelineWaveform extends StatefulWidget {
   final WaveformData? waveformData;
   final MediaPlayerService mediaPlayer;
+  final LyricsStateService lyricsState;
 
   const TimelineWaveform({
     super.key,
     required this.waveformData,
     required this.mediaPlayer,
+    required this.lyricsState,
   });
 
   @override
@@ -26,6 +29,7 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
   bool _isDragging = false;
   double _dragPositionMillis = 0;
   bool _wasPlayingBeforeDrag = false;
+  bool _wasShiftMode = false;
 
   @override
   Widget build(BuildContext context) {
@@ -43,17 +47,34 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final screenWidth = constraints.maxWidth;
-        final centerOffset = screenWidth / 2;
-        final waveColor = Theme.of(context).colorScheme.primary.withAlpha(150);
-        final primaryColor = Theme.of(context).colorScheme.primary;
+        return ListenableBuilder(
+          listenable: widget.lyricsState,
+          builder: (context, _) {
+            final isShiftMode = widget.lyricsState.isGlobalTimeShiftMode;
+            final screenWidth = constraints.maxWidth;
+            final centerOffset = screenWidth / 2;
+            final waveColor = isShiftMode 
+                ? Colors.orange.withAlpha(200) 
+                : Theme.of(context).colorScheme.primary.withAlpha(150);
+            final primaryColor = isShiftMode 
+                ? Colors.orange 
+                : Theme.of(context).colorScheme.primary;
+
+            if (isShiftMode && !_wasShiftMode) {
+              // Just entered shift mode
+              _dragPositionMillis = widget.mediaPlayer.position.inMilliseconds.toDouble();
+              // Start playback automatically
+              widget.mediaPlayer.play();
+            }
+            _wasShiftMode = isShiftMode;
 
         return GestureDetector(
           onScaleStart: (details) {
             _basePixelsPerSecond = _pixelsPerSecond;
             _isDragging = true;
-            _dragPositionMillis = widget.mediaPlayer.position.inMilliseconds
-                .toDouble();
+            if (!isShiftMode) {
+              _dragPositionMillis = widget.mediaPlayer.position.inMilliseconds.toDouble();
+            }
             _wasPlayingBeforeDrag = widget.mediaPlayer.isPlaying;
             if (_wasPlayingBeforeDrag) {
               widget.mediaPlayer.pause();
@@ -94,7 +115,11 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
             widget.mediaPlayer.seek(
               Duration(milliseconds: _dragPositionMillis.toInt()),
             );
-            if (_wasPlayingBeforeDrag) {
+            if (isShiftMode) {
+              widget.lyricsState.setGlobalTimeShiftTargetTime(
+                  Duration(milliseconds: _dragPositionMillis.toInt()));
+            }
+            if (_wasPlayingBeforeDrag || isShiftMode) {
               widget.mediaPlayer.play();
             }
           },
@@ -116,6 +141,7 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
                           mediaPlayer: widget.mediaPlayer,
                           isDragging: _isDragging,
                           dragPositionMillis: _dragPositionMillis,
+                          isShiftMode: isShiftMode,
                         ),
                       ),
                     ),
@@ -139,7 +165,7 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
                   child: AnimatedBuilder(
                     animation: widget.mediaPlayer,
                     builder: (context, child) {
-                      final currentPosition = _isDragging
+                      final currentPosition = (_isDragging || isShiftMode)
                           ? Duration(milliseconds: _dragPositionMillis.toInt())
                           : widget.mediaPlayer.position;
                       return Text(
@@ -157,6 +183,7 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
             ),
           ),
         );
+      });
       },
     );
   }
@@ -181,6 +208,7 @@ class WaveformPainter extends CustomPainter {
   final MediaPlayerService mediaPlayer;
   final bool isDragging;
   final double dragPositionMillis;
+  final bool isShiftMode;
 
 
   WaveformPainter({
@@ -191,12 +219,13 @@ class WaveformPainter extends CustomPainter {
     required this.mediaPlayer,
     required this.isDragging,
     required this.dragPositionMillis,
+    required this.isShiftMode,
   }) : super(repaint: mediaPlayer); // Repaint directly when mediaPlayer notifies
 
   @override
   void paint(Canvas canvas, Size size) {
     // Read position directly — no widget rebuild needed
-    final currentPosition = isDragging
+    final currentPosition = (isDragging || isShiftMode)
         ? Duration(milliseconds: dragPositionMillis.toInt())
         : mediaPlayer.position;
     final double positionPixels =
@@ -247,6 +276,8 @@ class WaveformPainter extends CustomPainter {
         oldDelegate.centerOffset != centerOffset ||
         oldDelegate.waveformData != waveformData ||
         oldDelegate.isDragging != isDragging ||
-        oldDelegate.dragPositionMillis != dragPositionMillis;
+        oldDelegate.dragPositionMillis != dragPositionMillis ||
+        oldDelegate.waveColor != waveColor ||
+        oldDelegate.isShiftMode != isShiftMode;
   }
 }

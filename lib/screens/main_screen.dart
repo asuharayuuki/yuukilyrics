@@ -704,6 +704,7 @@ class _MainScreenState extends State<MainScreen> {
               child: TimelineWaveform(
                 mediaPlayer: _mediaPlayer,
                 waveformData: _waveformData,
+                lyricsState: _lyricsState,
               ),
             ),
           ),

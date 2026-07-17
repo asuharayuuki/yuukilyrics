@@ -62,6 +62,67 @@ class LyricsStateService extends ChangeNotifier {
     return Duration(milliseconds: ms);
   }
 
+  /// Shift all timestamps in the document by [offsetMs].
+  void shiftAllTimestamps(int offsetMs) {
+    if (_document == null) return;
+    
+    for (final line in _document!.lines) {
+      for (final node in line.nodes) {
+        if (node is LyricTimeTag && node.time.isNotEmpty) {
+          final current = LyricTimeTag.parseDuration(node.time);
+          if (current != null) {
+            final ms = (current.inMilliseconds + offsetMs).clamp(0, double.maxFinite.toInt());
+            node.time = LyricTimeTag.formatDuration(Duration(milliseconds: ms));
+          }
+        } else if (node is LyricRuby) {
+          for (final rn in node.rubyNodes) {
+            if (rn is LyricTimeTag && rn.time.isNotEmpty) {
+              final current = LyricTimeTag.parseDuration(rn.time);
+              if (current != null) {
+                final ms = (current.inMilliseconds + offsetMs).clamp(0, double.maxFinite.toInt());
+                rn.time = LyricTimeTag.formatDuration(Duration(milliseconds: ms));
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    _syncRawText();
+    notifyListeners();
+  }
+
+  bool _isGlobalTimeShiftMode = false;
+  bool get isGlobalTimeShiftMode => _isGlobalTimeShiftMode;
+
+  Duration? _globalTimeShiftBaseTime;
+  Duration? get globalTimeShiftBaseTime => _globalTimeShiftBaseTime;
+
+  Duration? _globalTimeShiftTargetTime;
+
+  void setGlobalTimeShiftTargetTime(Duration target) {
+    _globalTimeShiftTargetTime = target;
+  }
+
+  void toggleGlobalTimeShiftMode(Duration currentPosition) {
+    if (_isGlobalTimeShiftMode) {
+      if (_globalTimeShiftBaseTime != null && _globalTimeShiftTargetTime != null) {
+        final offset = _globalTimeShiftTargetTime!.inMilliseconds - _globalTimeShiftBaseTime!.inMilliseconds;
+        if (offset != 0) {
+          shiftAllTimestamps(offset);
+        }
+      }
+      _isGlobalTimeShiftMode = false;
+      _globalTimeShiftBaseTime = null;
+      _globalTimeShiftTargetTime = null;
+    } else {
+      _isGlobalTimeShiftMode = true;
+      _globalTimeShiftBaseTime = currentPosition;
+      _globalTimeShiftTargetTime = currentPosition;
+    }
+    notifyListeners();
+  }
+
   // ─── Document Loading ──────────────────────────────────────────
 
   void loadLrcText(String text) {
@@ -1218,42 +1279,84 @@ class LyricsStateService extends ChangeNotifier {
       },
     );
 
+    final jobs = <_RubyJob>[];
     for (int li = 0; li < _document!.lines.length; li++) {
+      final line = _document!.lines[li];
+      for (int ni = 0; ni < line.nodes.length; ni++) {
+        final node = line.nodes[ni];
+        if (node is LyricText) {
+          final hasKanjiOrEng = RegExp(r'[a-zA-Z\u4E00-\u9FAF]').hasMatch(node.text);
+          if (hasKanjiOrEng) {
+            jobs.add(_RubyJob(li, ni, node));
+          }
+        }
+      }
+    }
+
+    // Process jobs in batches
+    final jobResults = <int, Map<int, List<LyricNode>>>{};
+    const maxCharsPerBatch = 2000;
+    List<_RubyJob> currentBatch = [];
+    int currentBatchChars = 0;
+
+    final batches = <List<_RubyJob>>[];
+    for (var job in jobs) {
+      if (currentBatchChars + job.node.text.length > maxCharsPerBatch && currentBatch.isNotEmpty) {
+        batches.add(currentBatch);
+        currentBatch = [];
+        currentBatchChars = 0;
+      }
+      currentBatch.add(job);
+      currentBatchChars += job.node.text.length + 1;
+    }
+    if (currentBatch.isNotEmpty) {
+      batches.add(currentBatch);
+    }
+
+    int completedBatches = 0;
+    for (var batch in batches) {
       if (_autoRubyCancelled) break;
 
-      final line = _document!.lines[li];
-      if (line.nodes.isEmpty) continue;
+      progressNotifier.value = completedBatches / batches.length;
+      statusNotifier.value = 'APIリクエスト中... (${completedBatches + 1} / ${batches.length})';
 
-      progressNotifier.value = (li + 1) / totalLines;
-      statusNotifier.value =
-          '${li + 1} / $totalLines 行 (${((li + 1) * 100 / totalLines).toStringAsFixed(0)}%)';
+      final texts = batch.map((j) => j.node.text).toList();
+      final batchResults = await _fetchRubyBatch(texts);
 
-      final newNodes = <LyricNode>[];
+      if (batchResults != null) {
+        // Note: batchResults.length might not exactly equal batch.length if API behaves unexpectedly.
+        // We will map as many as returned safely.
+        final limit = batchResults.length < batch.length ? batchResults.length : batch.length;
+        for (int i = 0; i < limit; i++) {
+          final job = batch[i];
+          jobResults.putIfAbsent(job.lineIndex, () => {});
+          jobResults[job.lineIndex]![job.nodeIndex] = batchResults[i];
+        }
+      }
 
-      for (int ni = 0; ni < line.nodes.length; ni++) {
-        if (_autoRubyCancelled) break;
-        final node = line.nodes[ni];
+      completedBatches++;
+    }
 
-        if (node is LyricText) {
-          final text = node.text;
-          final hasKanjiOrEng = RegExp(r'[a-zA-Z\u4E00-\u9FAF]').hasMatch(text);
+    if (!_autoRubyCancelled) {
+      progressNotifier.value = 1.0;
+      statusNotifier.value = 'AST更新中...';
 
-          if (hasKanjiOrEng) {
-            final rubyNodes = await _fetchRubyFromYahoo(text);
+      for (int li = 0; li < _document!.lines.length; li++) {
+        final line = _document!.lines[li];
+        final newNodes = <LyricNode>[];
+        for (int ni = 0; ni < line.nodes.length; ni++) {
+          final node = line.nodes[ni];
+          if (jobResults.containsKey(li) && jobResults[li]!.containsKey(ni)) {
+            final rubyNodes = jobResults[li]![ni];
             if (rubyNodes != null && rubyNodes.isNotEmpty) {
-              newNodes.addAll(rubyNodes);
+              newNodes.addAll(rubyNodes!);
             } else {
               newNodes.add(node);
             }
           } else {
             newNodes.add(node);
           }
-        } else {
-          newNodes.add(node);
         }
-      }
-
-      if (!_autoRubyCancelled) {
         line.nodes.clear();
         line.nodes.addAll(newNodes);
       }
@@ -1327,8 +1430,9 @@ class LyricsStateService extends ChangeNotifier {
     return expanded;
   }
 
-  Future<List<LyricNode>?> _fetchRubyFromYahoo(String text) async {
+  Future<List<List<LyricNode>>?> _fetchRubyBatch(List<String> texts) async {
     try {
+      final joinedText = texts.join('\n');
       final url = Uri.parse(
         'https://jlp.yahooapis.jp/FuriganaService/V2/furigana',
       );
@@ -1336,7 +1440,7 @@ class LyricsStateService extends ChangeNotifier {
         "id": "yuukilyrics",
         "jsonrpc": "2.0",
         "method": "jlp.furiganaservice.furigana",
-        "params": {"q": text, "grade": 1},
+        "params": {"q": joinedText, "grade": 1},
       };
 
       final response = await http
@@ -1353,7 +1457,6 @@ class LyricsStateService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final words = json['result']['word'] as List;
-        final nodes = <LyricNode>[];
 
         final processedWords = <Map<String, dynamic>>[];
         final smallKanaRegex = RegExp(r'^[ぁぃぅぇぉっゃゅょァィゥェォッャュョー゛]+');
@@ -1390,39 +1493,64 @@ class LyricsStateService extends ChangeNotifier {
           }
         }
 
+        final batchResults = <List<LyricNode>>[];
+        var currentNodes = <LyricNode>[];
+
         for (var w in processedWords) {
           final surface = w['surface'] as String;
           final furigana = w['furigana'] as String?;
           final subword = w['subword'];
 
-          if (subword != null &&
-              subword is List &&
-              furigana != null &&
-              furigana != surface) {
-            final int type = _calculateTagCount(surface, furigana);
-            nodes.add(
-              LyricRuby(
-                baseText: surface,
-                rubyNodes: _expandRubyNodes(type, surface, furigana),
-              ),
-            );
-          } else if (furigana != null && furigana != surface) {
-            final int type = _calculateTagCount(surface, furigana);
-            nodes.add(
-              LyricRuby(
-                baseText: surface,
-                rubyNodes: _expandRubyNodes(type, surface, furigana),
-              ),
-            );
+          if (surface.contains('\n')) {
+            final parts = surface.split('\n');
+            for (int i = 0; i < parts.length; i++) {
+              final part = parts[i];
+              if (part.isNotEmpty) {
+                currentNodes.add(LyricText(part));
+              }
+              if (i < parts.length - 1) {
+                batchResults.add(currentNodes);
+                currentNodes = [];
+              }
+            }
           } else {
-            nodes.add(LyricText(surface));
+            if (subword != null &&
+                subword is List &&
+                furigana != null &&
+                furigana != surface) {
+              final int type = _calculateTagCount(surface, furigana);
+              currentNodes.add(
+                LyricRuby(
+                  baseText: surface,
+                  rubyNodes: _expandRubyNodes(type, surface, furigana),
+                ),
+              );
+            } else if (furigana != null && furigana != surface) {
+              final int type = _calculateTagCount(surface, furigana);
+              currentNodes.add(
+                LyricRuby(
+                  baseText: surface,
+                  rubyNodes: _expandRubyNodes(type, surface, furigana),
+                ),
+              );
+            } else {
+              currentNodes.add(LyricText(surface));
+            }
           }
         }
-        return nodes;
+        batchResults.add(currentNodes);
+        return batchResults;
       }
     } catch (e) {
       debugPrint('Yahoo API Error: $e');
     }
     return null;
   }
+}
+
+class _RubyJob {
+  final int lineIndex;
+  final int nodeIndex;
+  final LyricText node;
+  _RubyJob(this.lineIndex, this.nodeIndex, this.node);
 }
