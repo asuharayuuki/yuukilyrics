@@ -66,6 +66,36 @@ class FfmpegService {
     }
   }
 
+  Future<({int width, int height})?> getVideoResolution(String videoPath) async {
+    if (isWindows) {
+      final ffmpeg = await windowsFfmpegPath;
+      final result = await Process.run(ffmpeg, ['-i', videoPath]);
+      final output = result.stderr.toString();
+      final regex = RegExp(r"Video:.*? (\d{3,5})x(\d{3,5})");
+      final match = regex.firstMatch(output);
+      if (match != null) {
+        return (width: int.parse(match.group(1)!), height: int.parse(match.group(2)!));
+      }
+      return null;
+    } else {
+      final session = await FFprobeKit.getMediaInformation(videoPath);
+      final mediaInfo = session.getMediaInformation();
+      if (mediaInfo != null) {
+        final streams = mediaInfo.getStreams();
+        for (var stream in streams) {
+          if (stream.getType() == 'video') {
+            final width = stream.getWidth();
+            final height = stream.getHeight();
+            if (width != null && height != null) {
+              return (width: width, height: height);
+            }
+          }
+        }
+      }
+      return null;
+    }
+  }
+
   Future<bool> checkHardwareAcceleration(String encoder) async {
     // 1-frame micro-test
     final args = [

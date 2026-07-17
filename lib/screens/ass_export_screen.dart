@@ -9,6 +9,8 @@ import 'ass_preview_screen.dart';
 
 import '../services/font_service.dart';
 import 'package:file_picker/file_picker.dart';
+import '../services/ffmpeg_service.dart';
+import 'dart:math';
 
 enum AssPagingMode { auto2Lines, emptyLineDelimited }
 
@@ -27,9 +29,11 @@ class AssExportSettings {
   final int fontSize;
   final AssPagingMode pagingMode;
   final int interludeThresholdSeconds;
-  final double visualGapMultiplier;
+  final int horizontalMargin;
   final Color edgeColor;
   final int outlineWidth;
+  final int blurLevel;
+  final int resolutionHeight;
 
   AssExportSettings({
     required this.fontName,
@@ -39,9 +43,11 @@ class AssExportSettings {
     required this.fontSize,
     required this.pagingMode,
     required this.interludeThresholdSeconds,
-    required this.visualGapMultiplier,
+    required this.horizontalMargin,
     required this.edgeColor,
     required this.outlineWidth,
+    required this.blurLevel,
+    required this.resolutionHeight,
   });
 }
 
@@ -72,12 +78,16 @@ class _AssExportScreenState extends State<AssExportScreen> {
   Color _selectedColor = const Color(0xFF0000AF);
   Color _edgeColor = const Color(0xFF96BFFF); // default: 150, 191, 255
   double _fontSize = 85.0;
-  double _outlineWidth = 7.0;
+  double _outlineWidth = 10.0;
+  int _blurLevel = 0;
+  int _resolutionHeight = 1080;
   AssPagingMode _pagingMode = AssPagingMode.auto2Lines;
   double _interludeThreshold = 10.0;
-  double _visualGapMultiplier = 4.0;
+  int _horizontalMargin = 100;
   late TextEditingController _fontController;
+  late TextEditingController _resolutionController;
   bool _isExporting = false;
+  int? _baselineResolutionHeight;
 
   final List<Color> _presetColors = [
     const Color(0xFF0000AF), // Blue (0, 0, 175)
@@ -95,11 +105,47 @@ class _AssExportScreenState extends State<AssExportScreen> {
   void initState() {
     super.initState();
     _fontController = TextEditingController(text: 'Kosugi Maru');
+    _resolutionController = TextEditingController(text: _resolutionHeight.toString());
+    _resolutionController.addListener(_onResolutionTextChanged);
+    _initVideoResolution();
+  }
+
+  @override
+  void didUpdateWidget(AssExportScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.mediaFilePath != oldWidget.mediaFilePath) {
+      _initVideoResolution();
+    }
+  }
+
+  void _onResolutionTextChanged() {
+    final h = int.tryParse(_resolutionController.text);
+    if (h != null && h != _resolutionHeight) {
+      setState(() => _resolutionHeight = h);
+    }
+  }
+
+  Future<void> _initVideoResolution() async {
+    if (widget.mediaFilePath != null) {
+      final res = await FfmpegService().getVideoResolution(widget.mediaFilePath!);
+      if (res != null && mounted) {
+        int w = res.width;
+        int h = res.height;
+        int paddedHeight = (max(h.toDouble(), w * 9.0 / 16.0) / 2.0).ceil() * 2;
+        setState(() {
+          _baselineResolutionHeight = paddedHeight;
+          _resolutionHeight = paddedHeight;
+          _resolutionController.text = paddedHeight.toString();
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
+    _resolutionController.removeListener(_onResolutionTextChanged);
     _fontController.dispose();
+    _resolutionController.dispose();
     for (var c in _singerControllers) {
       c.dispose();
     }
@@ -491,7 +537,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              '発光/縁取りの太さ (Outline): ${_outlineWidth.toInt()} px',
+              '発光の太さ (Glow Width): ${_outlineWidth.toInt()} px',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
             Slider(
@@ -503,8 +549,79 @@ class _AssExportScreenState extends State<AssExportScreen> {
               onChanged: (val) => setState(() => _outlineWidth = val),
             ),
             const SizedBox(height: 24),
+            Text(
+              'ブラーの濃さ (Blur Level): $_blurLevel',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            Slider(
+              value: _blurLevel.toDouble(),
+              min: 0,
+              max: 2,
+              divisions: 2,
+              label: _blurLevel.toString(),
+              onChanged: (val) => setState(() => _blurLevel = val.toInt()),
+            ),
+            const SizedBox(height: 24),
             const Text(
-              'ページネーション方式:',
+              '出力解像度 (Target Resolution):',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownMenu<int>(
+                    controller: _resolutionController,
+                    label: const Text('高さ (Height) px'),
+                    expandedInsets: EdgeInsets.zero,
+                    dropdownMenuEntries: const [
+                      DropdownMenuEntry(value: 720, label: '720'),
+                      DropdownMenuEntry(value: 1080, label: '1080'),
+                      DropdownMenuEntry(value: 1440, label: '1440'),
+                      DropdownMenuEntry(value: 2160, label: '2160'),
+                    ],
+                    onSelected: (val) {
+                      if (val != null) {
+                        _resolutionController.text = val.toString();
+                      }
+                    },
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Icon(Icons.close),
+                ),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.grey.withValues(alpha: 0.1),
+                    ),
+                    child: Text(
+                      '幅 (Width): ${(_resolutionHeight * 16 / 9).round()} px',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                ),
+                if (_baselineResolutionHeight != null) ...[
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: '動画のデフォルト解像度に戻す',
+                    child: IconButton(
+                      icon: const Icon(Icons.restore),
+                      onPressed: () {
+                        _resolutionController.text = _baselineResolutionHeight!.toString();
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 32),
+            const Text(
+              '改ページ設定:',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 12),
@@ -545,20 +662,20 @@ class _AssExportScreenState extends State<AssExportScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              '行内の文字間隔 (Visual Gap): ${_visualGapMultiplier.toStringAsFixed(1)}x',
+              '左右余白 (Horizontal Margin): $_horizontalMargin px',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
             const Text(
-              '2行/空行モードにおける文字間の視覚的な隙間を調整します',
+              '左右の歌詞を画面の中央に寄せるための余白を設定します (スマート水平配置)',
               style: TextStyle(fontSize: 14, color: Colors.grey),
             ),
             Slider(
-              value: _visualGapMultiplier,
-              min: 0.0,
-              max: 10.0,
-              divisions: 20,
-              label: '${_visualGapMultiplier.toStringAsFixed(1)}x',
-              onChanged: (val) => setState(() => _visualGapMultiplier = val),
+              value: _horizontalMargin.toDouble(),
+              min: 0,
+              max: 300,
+              divisions: 60,
+              label: '$_horizontalMargin px',
+              onChanged: (val) => setState(() => _horizontalMargin = val.toInt()),
             ),
             const SizedBox(height: 80), // Padding for scrolling
           ],
@@ -578,9 +695,11 @@ class _AssExportScreenState extends State<AssExportScreen> {
       fontSize: _fontSize.toInt(),
       pagingMode: _pagingMode,
       interludeThresholdSeconds: _interludeThreshold.toInt(),
-      visualGapMultiplier: _visualGapMultiplier,
+      horizontalMargin: _horizontalMargin,
       edgeColor: _edgeColor,
       outlineWidth: _outlineWidth.toInt(),
+      blurLevel: _blurLevel,
+      resolutionHeight: _resolutionHeight,
     );
   }
 

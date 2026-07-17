@@ -37,13 +37,31 @@ class AssBlock {
 }
 
 class AssExporter {
-  static const int playResX = 1920;
-  static const int playResY = 1080;
+  static int getPlayResX(AssExportSettings settings) =>
+      (1920.0 * (settings.resolutionHeight / 1080.0)).round();
+  static int getPlayResY(AssExportSettings settings) =>
+      settings.resolutionHeight;
 
   static Future<String> generateAss(
     LyricDocument doc,
-    AssExportSettings settings,
+    AssExportSettings rawSettings,
   ) async {
+    double scale = rawSettings.resolutionHeight / 1080.0;
+    AssExportSettings settings = AssExportSettings(
+      fontName: rawSettings.fontName,
+      customFontPath: rawSettings.customFontPath,
+      singerColors: rawSettings.singerColors,
+      primaryColor: rawSettings.primaryColor,
+      fontSize: (rawSettings.fontSize * scale).round(),
+      pagingMode: rawSettings.pagingMode,
+      interludeThresholdSeconds: rawSettings.interludeThresholdSeconds,
+      horizontalMargin: (rawSettings.horizontalMargin * scale).round(),
+      edgeColor: rawSettings.edgeColor,
+      outlineWidth: (rawSettings.outlineWidth * scale).round(),
+      blurLevel: rawSettings.blurLevel,
+      resolutionHeight: rawSettings.resolutionHeight,
+    );
+
     final sb = StringBuffer();
     _writeHeader(sb, settings);
 
@@ -88,6 +106,8 @@ class AssExporter {
 
           int waitSeconds = gap.inSeconds + 1;
           String interludeText = '間奏 $waitSeconds 秒';
+          int playResX = getPlayResX(settings);
+          int playResY = getPlayResY(settings);
           sb.writeln(
             'Dialogue: 0,${_formatTime(promptStart)},${_formatTime(promptEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${playResX / 2},${playResY * 0.9})\\fad(500,500)\\c&HFFFFFF&}$interludeText',
           );
@@ -121,6 +141,9 @@ class AssExporter {
   }
 
   static void _writeHeader(StringBuffer sb, AssExportSettings settings) {
+    int playResX = getPlayResX(settings);
+    int playResY = getPlayResY(settings);
+    
     sb.writeln('[Script Info]');
     sb.writeln('ScriptType: v4.00+');
     sb.writeln('PlayResX: $playResX');
@@ -133,31 +156,34 @@ class AssExporter {
     int fs = settings.fontSize;
     String fn = settings.fontName;
 
-    int outW = settings.outlineWidth;
     int rubyFs = (fs * 36 / 75).round();
-    int rubyOut = (settings.outlineWidth * 5 / 7).round();
 
     int spacing = (fs * 12 / 75).round();
     int rubySpacing = (rubyFs * 12 / 75).round();
+
+    int baseOutW = (fs * 7 / 85).round();
+    if (baseOutW < 1) baseOutW = 1;
+    int rubyBaseOutW = (baseOutW * 5 / 7).round();
+    if (rubyBaseOutW < 1) rubyBaseOutW = 1;
 
     sb.writeln('[V4+ Styles]');
     sb.writeln(
       'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     );
     sb.writeln(
-      'Style: DefaultUnsung,$fn,$fs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
+      'Style: DefaultUnsung,$fn,$fs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: DefaultSung,$fn,$fs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
+      'Style: DefaultSung,$fn,$fs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: RubyUnsung,$fn,$rubyFs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyOut,0,5,0,0,0,1',
+      'Style: RubyUnsung,$fn,$rubyFs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyBaseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: RubySung,$fn,$rubyFs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyOut,0,5,0,0,0,1',
+      'Style: RubySung,$fn,$rubyFs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyBaseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: Interlude,$fn,$fs,$c,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$outW,0,5,0,0,0,1',
+      'Style: Interlude,$fn,$fs,$c,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
     );
 
     sb.writeln('');
@@ -330,7 +356,10 @@ class AssExporter {
       final startTime = _getLineStartTime(line);
       final endTime = _getLineEndTime(line, startTime);
 
-      final double maxLineW = 1800;
+      int playResX = getPlayResX(settings);
+      double scale = settings.resolutionHeight / 1080.0;
+      final double maxLineW = 1800 * scale;
+      
       double lineSpacingVal = (fs * 12 / 75).roundToDouble();
       double width = _getLineWidth(line, fs, lineSpacingVal);
 
@@ -651,13 +680,54 @@ class AssExporter {
   ) {
     if (block.lines.isEmpty) return;
 
-    final double centerX = playResX / 2;
-    final double maxW = block.maxWidth;
-    final double visualGap = settings.fontSize * settings.visualGapMultiplier;
-    final double boxLeft = centerX - maxW / 2 - visualGap / 2;
-    final double boxRight = centerX + maxW / 2 + visualGap / 2;
+    int playResX = getPlayResX(settings);
+    int playResY = getPlayResY(settings);
 
+    final double centerX = playResX / 2;
     final fs = settings.fontSize.toDouble();
+
+    int getAlign(int slot, int totalLines, AssPagingMode mode) {
+      if (mode == AssPagingMode.auto2Lines) {
+        if (totalLines == 1) return 2;
+        if (slot == 0) return 0;
+        return 1;
+      } else {
+        if (totalLines == 1) return 2;
+        if (totalLines == 2) {
+          if (slot == 0) return 0;
+          return 1;
+        } else if (totalLines == 3) {
+          if (slot == 0) return 0;
+          if (slot == 1) return 1;
+          return 2;
+        } else {
+          if (slot == 0 || slot == 2) return 0;
+          return 1;
+        }
+      }
+    }
+
+    double wLeft = 0;
+    double wRight = 0;
+    double wCenter = 0;
+    for (int i = 0; i < block.lines.length; i++) {
+      int slot = settings.pagingMode == AssPagingMode.auto2Lines ? i % 2 : i;
+      int align = getAlign(slot, block.lines.length, settings.pagingMode);
+      for (int r = 0; r < block.lines[i].rows.length; r++) {
+        double w = block.lines[i].rowWidths[r];
+        if (align == 0 && w > wLeft) wLeft = w;
+        else if (align == 1 && w > wRight) wRight = w;
+        else if (align == 2 && w > wCenter) wCenter = w;
+      }
+    }
+
+    double hMargin = settings.horizontalMargin.toDouble();
+    double emptySpace = playResX - (hMargin * 2) - wLeft - wCenter - wRight + fs;
+    double offset = emptySpace > 0 ? emptySpace / 2 : 0;
+
+    final double boxLeft = hMargin + offset;
+    final double boxRight = playResX - hMargin - offset;
+
     final lineSpacing = fs + (fs * 0.8) + (fs * 30 / 75);
 
     int totalRows = 0;
@@ -712,7 +782,9 @@ class AssExporter {
 
         double spacing = (fs * 12 / 75).roundToDouble();
         iconX += (fs - iconFs) / 2;
-        double outW = settings.outlineWidth.toDouble();
+        double baseOutW = (fs * 7 / 85).roundToDouble();
+        if (baseOutW < 1.0) baseOutW = 1.0;
+        double outW = settings.outlineWidth.toDouble() + baseOutW;
         double dotW = _getCharWidth('●', iconFs, spacing);
         double totalW = dotW * 3;
 
@@ -793,29 +865,13 @@ class AssExporter {
         Duration displayEnd = rowEndTime + const Duration(milliseconds: 200);
 
         double x = centerX;
-        if (settings.pagingMode == AssPagingMode.auto2Lines) {
-          if (block.lines.length == 1) {
-            x = centerX - rowWidth / 2;
-          } else {
-            if (slot == 0) x = boxLeft;
-            if (slot == 1) x = boxRight - rowWidth;
-          }
+        int align = getAlign(slot, block.lines.length, settings.pagingMode);
+        if (align == 0) {
+          x = boxLeft;
+        } else if (align == 1) {
+          x = boxRight - rowWidth;
         } else {
-          if (block.lines.length == 2) {
-            if (slot == 0) x = boxLeft;
-            if (slot == 1) x = boxRight - rowWidth;
-          } else if (block.lines.length == 3) {
-            if (slot == 0) x = boxLeft;
-            if (slot == 1) x = boxRight - rowWidth;
-            if (slot == 2) x = centerX - rowWidth / 2;
-          } else if (block.lines.length >= 4) {
-            if (slot == 0) x = boxLeft;
-            if (slot == 1) x = boxRight - rowWidth;
-            if (slot == 2) x = boxLeft;
-            if (slot == 3) x = boxRight - rowWidth;
-          } else {
-            x = centerX - rowWidth / 2;
-          }
+          x = centerX - rowWidth / 2;
         }
 
         // Clamp x to keep text within screen bounds
@@ -863,6 +919,11 @@ class AssExporter {
     double rubySpacing = (rubyFs * 12 / 75).roundToDouble();
     double outW = settings.outlineWidth.toDouble();
     double rubyOut = (settings.outlineWidth * 5 / 7).roundToDouble();
+
+    double baseOutW = (fs * 7 / 85).roundToDouble();
+    if (baseOutW < 1.0) baseOutW = 1.0;
+    double rubyBaseOutW = (baseOutW * 5 / 7).roundToDouble();
+    if (rubyBaseOutW < 1.0) rubyBaseOutW = 1.0;
 
     Duration currentTagTime = lineData.startTime;
 
@@ -916,14 +977,21 @@ class AssExporter {
             int tStart = (activeTime - displayStart).inMilliseconds;
             int tEnd = (nextTagTime - displayStart).inMilliseconds;
 
-            String glowUnsungTags = '\\1a&HFF&\\3a&H00&\\3c$unsungOutlineColor\\bord${(outW + 4).toStringAsFixed(1)}\\blur10\\t($tStart,$tEnd,\\3a&HFF&)';
-            String glowSungTags = '\\1a&HFF&\\3a&HFF&\\3c$sungOutlineColor\\bord${(outW + 4).toStringAsFixed(1)}\\blur10\\t($tStart,$tEnd,\\3a&H00&)';
-            sb.writeln(
-              'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowUnsungTags}${node.text}',
-            );
-            sb.writeln(
-              'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowSungTags}${node.text}',
-            );
+            if (outW > 0) {
+              int numLayers = settings.blurLevel + 1;
+              for (int i = 0; i < numLayers; i++) {
+                double layerOutW = outW - (i * outW / numLayers);
+                double glowBord = baseOutW + layerOutW / 2;
+                String glowUnsungTags = '\\1c$unsungOutlineColor\\3c$unsungOutlineColor\\1a&H00&\\3a&H00&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&HFF&\\3a&HFF&)';
+                String glowSungTags = '\\1c$sungOutlineColor\\3c$sungOutlineColor\\1a&HFF&\\3a&HFF&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&H00&\\3a&H00&)';
+                sb.writeln(
+                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowUnsungTags}${node.text}',
+                );
+                sb.writeln(
+                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowSungTags}${node.text}',
+                );
+              }
+            }
 
             _writeSyllableClip(
               sb: sb,
@@ -935,7 +1003,7 @@ class AssExporter {
               x: currentX,
               y: y,
               w: w,
-              outW: outW,
+              outW: baseOutW + outW,
               tStart: tStart,
               tEnd: tEnd,
               displayStart: displayStart,
@@ -955,7 +1023,7 @@ class AssExporter {
               x: currentX,
               y: y,
               w: w,
-              outW: outW,
+              outW: baseOutW + outW,
               tStart: tStart,
               tEnd: tEnd,
               displayStart: displayStart,
@@ -969,14 +1037,21 @@ class AssExporter {
             int tStart = (activeTime - displayStart).inMilliseconds;
             int tEnd = (nextTagTime - displayStart).inMilliseconds;
 
-            String baseGlowUnsungTags = '\\1a&HFF&\\3a&H00&\\3c$unsungOutlineColor\\bord${(outW + 4).toStringAsFixed(1)}\\blur10\\t($tStart,$tEnd,\\3a&HFF&)';
-            String baseGlowSungTags = '\\1a&HFF&\\3a&HFF&\\3c$sungOutlineColor\\bord${(outW + 4).toStringAsFixed(1)}\\blur10\\t($tStart,$tEnd,\\3a&H00&)';
-            sb.writeln(
-              'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseGlowUnsungTags}${node.baseText}',
-            );
-            sb.writeln(
-              'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseGlowSungTags}${node.baseText}',
-            );
+            if (outW > 0) {
+              int numLayers = settings.blurLevel + 1;
+              for (int i = 0; i < numLayers; i++) {
+                double layerOutW = outW - (i * outW / numLayers);
+                double glowBord = baseOutW + layerOutW / 2;
+                String baseGlowUnsungTags = '\\1c$unsungOutlineColor\\3c$unsungOutlineColor\\1a&H00&\\3a&H00&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&HFF&\\3a&HFF&)';
+                String baseGlowSungTags = '\\1c$sungOutlineColor\\3c$sungOutlineColor\\1a&HFF&\\3a&HFF&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&H00&\\3a&H00&)';
+                sb.writeln(
+                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseGlowUnsungTags}${node.baseText}',
+                );
+                sb.writeln(
+                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseGlowSungTags}${node.baseText}',
+                );
+              }
+            }
 
             double rubyY = y - fs * 0.9;
             double rw = 0;
@@ -990,8 +1065,8 @@ class AssExporter {
 
             double clipTop = y - fs * 1.5;
             double clipBottom = y + fs * 1.5;
-            double kLeft = currentX - outW * 4.0;
-            double kRight = currentX + w + outW * 4.0;
+            double kLeft = currentX - (baseOutW + outW) * 4.0;
+            double kRight = currentX + w + (baseOutW + outW) * 4.0;
 
             String baseSungSweep = '\\clip(${currentX.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${currentX.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
             String baseUnsungSweep = '\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
@@ -1067,8 +1142,8 @@ class AssExporter {
             double currentRubyX = cx - rw / 2;
             double adjustedRubyCx = cx + rubySpacing / 2;
 
-            double rkLeft = currentRubyX - rubyOut * 4.0;
-            double rkRight = currentRubyX + rw + rubyOut * 4.0;
+            double rkLeft = currentRubyX - (rubyBaseOutW + rubyOut) * 4.0;
+            double rkRight = currentRubyX + rw + (rubyBaseOutW + rubyOut) * 4.0;
 
             String rubySungSweep = '\\clip(${currentRubyX.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${currentRubyX.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)})';
             String rubyUnsungSweep = '\\clip(${rkLeft.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${rkRight.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)})';
@@ -1126,11 +1201,17 @@ class AssExporter {
             sb.writeln('Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultSung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseSungSweep}${node.baseText}');
 
             if (visibleText.isNotEmpty) {
-              String rubyGlowUnsungTags = '\\1a&HFF&\\3a&H00&\\3c$unsungOutlineColor\\bord${(rubyOut + 2).toStringAsFixed(1)}\\blur10\\t($tStart,$tEnd,\\3a&HFF&)';
-              String rubyGlowSungTags = '\\1a&HFF&\\3a&HFF&\\3c$sungOutlineColor\\bord${(rubyOut + 2).toStringAsFixed(1)}\\blur10\\t($tStart,$tEnd,\\3a&H00&)';
-
-              sb.writeln('Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyGlowUnsungTags}$visibleText');
-              sb.writeln('Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyGlowSungTags}$visibleText');
+              if (rubyOut > 0) {
+                int numLayers = settings.blurLevel + 1;
+                for (int i = 0; i < numLayers; i++) {
+                  double layerRubyOutW = rubyOut - (i * rubyOut / numLayers);
+                  double glowRubyBord = rubyBaseOutW + layerRubyOutW / 2;
+                  String rubyGlowUnsungTags = '\\1c$unsungOutlineColor\\3c$unsungOutlineColor\\1a&H00&\\3a&H00&\\bord${glowRubyBord.toStringAsFixed(1)}\\blur${layerRubyOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&HFF&\\3a&HFF&)';
+                  String rubyGlowSungTags = '\\1c$sungOutlineColor\\3c$sungOutlineColor\\1a&HFF&\\3a&HFF&\\bord${glowRubyBord.toStringAsFixed(1)}\\blur${layerRubyOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&H00&\\3a&H00&)';
+                  sb.writeln('Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyGlowUnsungTags}$visibleText');
+                  sb.writeln('Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyGlowSungTags}$visibleText');
+                }
+              }
 
               sb.writeln('Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyUnsungSweep}$visibleText');
               sb.writeln('Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubySung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubySungSweep}$visibleText');
