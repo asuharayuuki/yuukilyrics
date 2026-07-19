@@ -317,29 +317,42 @@ class _MainScreenState extends State<MainScreen> {
           filename += '_hardsub';
 
           String? outputPath;
-          if (Platform.isAndroid || Platform.isIOS) {
-            // Save to external storage so other apps can access the file
-            final extDir = await getExternalStorageDirectory();
-            if (extDir != null) {
-              final exportDir = Directory('${extDir.path}/exports');
-              if (!await exportDir.exists()) {
-                await exportDir.create(recursive: true);
+          try {
+            if (Platform.isAndroid) {
+              // Android can expose the app-specific external storage path.
+              final extDir = await getExternalStorageDirectory();
+              if (extDir != null) {
+                final exportDir = Directory('${extDir.path}/exports');
+                if (!await exportDir.exists()) {
+                  await exportDir.create(recursive: true);
+                }
+                outputPath = '${exportDir.path}/$filename.mp4';
+              } else {
+                final tempDir = await getTemporaryDirectory();
+                outputPath = '${tempDir.path}/$filename.mp4';
               }
-              outputPath = '${exportDir.path}/$filename.mp4';
-            } else {
-              // Fallback to temp directory if external storage is unavailable
+            } else if (Platform.isIOS) {
+              // iOS has no external storage directory. Export inside the app
+              // sandbox and hand the result to the existing share action.
               final tempDir = await getTemporaryDirectory();
               outputPath = '${tempDir.path}/$filename.mp4';
+            } else {
+              outputPath = await FilePicker.saveFile(
+                dialogTitle: '動画の保存先を選択',
+                fileName: '$filename.mp4',
+                type: FileType.video,
+              );
             }
-          } else {
-            outputPath = await FilePicker.saveFile(
-              dialogTitle: '動画の保存先を選択',
-              fileName: '$filename.mp4',
-              type: FileType.video,
-            );
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('出力先の準備に失敗しました: $e')),
+              );
+            }
+            return;
           }
 
-          if (outputPath == null) return;
+          if (outputPath == null || !mounted) return;
 
           ValueNotifier<double> progressNotifier = ValueNotifier(0.0);
           ValueNotifier<String> codecNotifier = ValueNotifier('最適なエンコーダーを検出中...');
