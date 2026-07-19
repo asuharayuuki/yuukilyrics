@@ -43,7 +43,7 @@ class FontService {
   Future<String> processAndSandboxFont(String ttfFilePath) async {
     final file = File(ttfFilePath);
     if (!await file.exists()) {
-      throw Exception("Font file does not exist: $ttfFilePath");
+      throw Exception('フォントファイルが見つかりません：$ttfFilePath');
     }
 
     final bytes = await file.readAsBytes();
@@ -88,7 +88,7 @@ class FontService {
     }
 
     if (nameTableOffset == -1) {
-      throw Exception("Invalid TTF: 'name' table not found.");
+      throw Exception('フォント名の情報を取得できません。');
     }
 
     final numNameRecords = byteData.getUint16(nameTableOffset + 2, Endian.big);
@@ -139,6 +139,6 @@ class FontService {
     }
 
     if (fallbackName != null) return fallbackName;
-    throw Exception("Could not extract Font Family name from TTF.");
+    throw Exception('フォントファミリー名を取得できません。');
   }
 }

@@ -1242,7 +1242,7 @@ class LyricsStateService extends ChangeNotifier {
 
     final totalLines = _document!.lines.length;
     final progressNotifier = ValueNotifier<double>(0.0);
-    final statusNotifier = ValueNotifier<String>('準備中...');
+    final statusNotifier = ValueNotifier<String>('準備中…');
 
     // Show progress dialog
     showDialog(
@@ -1250,7 +1250,7 @@ class LyricsStateService extends ChangeNotifier {
       barrierDismissible: false,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('自動ルビ＆チェック付加'),
+          title: const Text('自動ルビ・チェック付加'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1318,7 +1318,7 @@ class LyricsStateService extends ChangeNotifier {
       if (_autoRubyCancelled) break;
 
       progressNotifier.value = completedBatches / batches.length;
-      statusNotifier.value = 'APIリクエスト中... (${completedBatches + 1} / ${batches.length})';
+      statusNotifier.value = 'ルビを取得中…（${completedBatches + 1}／${batches.length}）';
 
       final texts = batch.map((j) => j.node.text).toList();
       final batchResults = await _fetchRubyBatch(texts);
@@ -1339,7 +1339,7 @@ class LyricsStateService extends ChangeNotifier {
 
     if (!_autoRubyCancelled) {
       progressNotifier.value = 1.0;
-      statusNotifier.value = 'AST更新中...';
+      statusNotifier.value = '歌詞を更新中…';
 
       for (int li = 0; li < _document!.lines.length; li++) {
         final line = _document!.lines[li];
@@ -1375,7 +1375,9 @@ class LyricsStateService extends ChangeNotifier {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _autoRubyCancelled ? 'ルビ振りを中止しました（完了した部分は保持されます）' : '自動ルビ＆チェック完了!',
+            _autoRubyCancelled
+                ? 'ルビ振りを中止しました。完了済みの内容は保持されます。'
+                : '自動ルビ・チェック付加が完了しました。',
           ),
         ),
       );

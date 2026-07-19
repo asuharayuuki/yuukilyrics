@@ -36,7 +36,9 @@ class FfmpegService {
       // Ignored
     }
 
-    throw Exception('FFmpeg が見つかりません！ ffmpeg.exe をシステム環境変数 PATH に追加するか、アプリに同梱してください。');
+    throw Exception(
+      'FFmpeg が見つかりません。ffmpeg.exe を環境変数 PATH に追加するか、アプリに同梱してください。',
+    );
   }
 
   Future<int> getVideoDurationSec(String videoPath) async {
@@ -323,7 +325,10 @@ class FfmpegService {
         final exitCode = await _activeProcess!.exitCode;
         _activeProcess = null;
         if (exitCode != 0) {
-          throw Exception("FFmpeg encoding failed on Windows (exit code $exitCode).\nLog:\n$stderrBuffer");
+          throw Exception(
+            'Windows での FFmpeg エンコードに失敗しました'
+            '（終了コード：$exitCode）。\nログ：\n$stderrBuffer',
+          );
         }
       } else {
         // Mobile - execute with environment variables for libass

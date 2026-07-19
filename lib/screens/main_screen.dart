@@ -87,7 +87,7 @@ class _MainScreenState extends State<MainScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('波形解析エラー: $e'),
+              content: Text('波形の解析に失敗しました：$e'),
               backgroundColor: Colors.redAccent,
               duration: const Duration(seconds: 5),
             ),
@@ -126,7 +126,7 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('ファイルを出力 ($extension)'),
+          title: const Text('ファイルを出力'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -149,7 +149,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, {'action': 'export', 'filename': filenameController.text}),
-              child: const Text('デバイスに出力'),
+              child: const Text('デバイスに保存'),
             ),
           ],
         );
@@ -192,7 +192,7 @@ class _MainScreenState extends State<MainScreen> {
           await SharePlus.instance.share(
             ShareParams(
               files: [XFile(tempFile.path)],
-              subject: '歌詞を出力: $filename.txt',
+              subject: 'タイムタグ付き歌詞：$filename.txt',
             ),
           );
           // Delay clean up temp file after share to prevent race conditions on mobile
@@ -223,14 +223,14 @@ class _MainScreenState extends State<MainScreen> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('への出力が成功しました：$outputPath')));
+          ).showSnackBar(SnackBar(content: Text('歌詞ファイルを保存しました：$outputPath')));
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('出力に失敗しました：$e')));
+        ).showSnackBar(SnackBar(content: Text('歌詞ファイルの出力に失敗しました：$e')));
       }
     }
   }
@@ -262,7 +262,7 @@ class _MainScreenState extends State<MainScreen> {
           await SharePlus.instance.share(
             ShareParams(
               files: [XFile(tempFile.path)],
-              subject: '字幕を出力: $filename.ass',
+              subject: 'ASS 字幕：$filename.ass',
             ),
           );
           // Delay clean up temp file after share to prevent race conditions on mobile
@@ -293,14 +293,14 @@ class _MainScreenState extends State<MainScreen> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('高度なASSの出力が成功しました：$outputPath')));
+          ).showSnackBar(SnackBar(content: Text('ASS 字幕を保存しました：$outputPath')));
         }
       }
     } catch (e) {
             if (mounted) {
               ScaffoldMessenger.of(
                 context,
-              ).showSnackBar(SnackBar(content: Text('出力に失敗しました: $e')));
+              ).showSnackBar(SnackBar(content: Text('ASS 字幕の出力に失敗しました：$e')));
             }
           }
           }
@@ -346,7 +346,7 @@ class _MainScreenState extends State<MainScreen> {
           } catch (e) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('出力先の準備に失敗しました: $e')),
+                SnackBar(content: Text('出力先を準備できませんでした：$e')),
               );
             }
             return;
@@ -355,7 +355,7 @@ class _MainScreenState extends State<MainScreen> {
           if (outputPath == null || !mounted) return;
 
           ValueNotifier<double> progressNotifier = ValueNotifier(0.0);
-          ValueNotifier<String> codecNotifier = ValueNotifier('最適なエンコーダーを検出中...');
+          ValueNotifier<String> codecNotifier = ValueNotifier('エンコーダーを検出中…');
           bool isCancelled = false;
           final ffmpegService = FfmpegService();
           final fontService = FontService();
@@ -364,16 +364,16 @@ class _MainScreenState extends State<MainScreen> {
             context: context,
             barrierDismissible: false,
             builder: (ctx) => AlertDialog(
-              title: const Text('動画をエンコード中...'),
+              title: const Text('動画をエンコード中…'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('FFmpeg を使用してハードサブをエンコードしています。しばらくお待ちください。'),
+                  const Text('字幕を動画に焼き付けています。しばらくお待ちください。'),
                   const SizedBox(height: 8),
                   ValueListenableBuilder<String>(
                     valueListenable: codecNotifier,
                     builder: (context, codec, child) {
-                      return Text('エンコーダー: $codec', style: const TextStyle(fontSize: 12, color: Colors.grey));
+                      return Text('エンコーダー：$codec', style: const TextStyle(fontSize: 12, color: Colors.grey));
                     },
                   ),
                   const SizedBox(height: 16),
@@ -452,14 +452,14 @@ class _MainScreenState extends State<MainScreen> {
                 // Show location + offer share
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('保存しました：$outputPath'),
+                    content: Text('動画を保存しました：$outputPath'),
                     action: SnackBarAction(
                       label: '共有',
                       onPressed: () async {
                         await SharePlus.instance.share(
                           ShareParams(
                             files: [XFile(outputPath!)],
-                            subject: '動画を出力: $filename.mp4',
+                            subject: '字幕付き動画：$filename.mp4',
                           ),
                         );
                       },
@@ -469,7 +469,7 @@ class _MainScreenState extends State<MainScreen> {
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('動画の出力が成功しました：$outputPath')),
+                  SnackBar(content: Text('動画を保存しました：$outputPath')),
                 );
               }
             }
@@ -484,7 +484,7 @@ class _MainScreenState extends State<MainScreen> {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.of(ctx).pop(),
-                      child: const Text('OK'),
+                      child: const Text('閉じる'),
                     ),
                   ],
                 ),
@@ -509,8 +509,8 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.audio_file),
-                title: const Text('メディアを開く (Open Media)'),
-                subtitle: const Text('編集する音声または動画ファイルをインポートします'),
+                title: const Text('メディアファイルを開く'),
+                subtitle: const Text('タイムタグを付ける音声または動画を読み込みます'),
                 enabled: !_isLoadingMedia,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -519,8 +519,8 @@ class _MainScreenState extends State<MainScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.description),
-                title: const Text('歌詞を開く (Open LRC)'),
-                subtitle: const Text('外部の LRC 歌詞ファイルをインポートして編集します'),
+                title: const Text('歌詞ファイルを開く'),
+                subtitle: const Text('LRC などの歌詞ファイルを読み込みます'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _openLrc();
@@ -529,8 +529,8 @@ class _MainScreenState extends State<MainScreen> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.note),
-                title: const Text('LRC 歌詞を出力'),
-                subtitle: const Text('現在のタイムラインを標準の LRC 形式で出力します'),
+                title: const Text('タイムタグ付き歌詞を出力'),
+                subtitle: const Text('編集中の歌詞を LRC 形式で保存します'),
                 onTap: () {
                   Navigator.pop(ctx);
                   _exportLrc();
@@ -591,14 +591,14 @@ class _MainScreenState extends State<MainScreen> {
                   showLicensePage(context: context);
                 },
                 icon: const Icon(Icons.description),
-                label: const Text('Licenses'),
+                label: const Text('ライセンス'),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
+              child: const Text('閉じる'),
             ),
           ],
         );
@@ -630,7 +630,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
         NavigationDrawerDestination(
           icon: Icon(Icons.timer),
-          label: Text('タイミング'),
+          label: Text('タイムタグ編集'),
         ),
         NavigationDrawerDestination(
           icon: Icon(Icons.movie_creation),
@@ -639,7 +639,7 @@ class _MainScreenState extends State<MainScreen> {
         Divider(),
         NavigationDrawerDestination(
           icon: Icon(Icons.info_outline),
-          label: Text('情報'),
+          label: Text('アプリ情報'),
         ),
       ],
     );
@@ -682,13 +682,13 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
           IconButton(
-            tooltip: 'Files',
+            tooltip: 'ファイル',
             icon: const Icon(Icons.file_open),
             onPressed: _showFilesBottomSheet,
           ),
           const SizedBox(width: 8),
           IconButton(
-            tooltip: 'Toggle Edit Mode',
+            tooltip: 'テキスト編集モードを切り替え',
             icon: Icon(_isTextMode ? Icons.code : Icons.edit_note),
             onPressed: _toggleMode,
           ),

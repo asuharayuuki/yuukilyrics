@@ -77,7 +77,7 @@ class _AssPreviewScreenState extends State<AssPreviewScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('プレビューの読み込みに失敗しました: $e'),
+            content: Text('プレビューの読み込みに失敗しました：$e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -96,7 +96,7 @@ class _AssPreviewScreenState extends State<AssPreviewScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('字幕レンダリングのエラー/警告情報'),
+        title: const Text('字幕描画の警告・エラー'),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -180,7 +180,7 @@ class _AssPreviewScreenState extends State<AssPreviewScreen> {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('2x 再生中', style: TextStyle(color: Colors.white)),
+                      Text('2 倍速で再生中', style: TextStyle(color: Colors.white)),
                       SizedBox(width: 8),
                       Icon(Icons.fast_forward, color: Colors.white, size: 16),
                     ],
@@ -207,7 +207,10 @@ class _AssPreviewScreenState extends State<AssPreviewScreen> {
                   onPressed: _showLogsDialog,
                   backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
                   icon: const Icon(Icons.warning_amber_rounded, color: Colors.white),
-                  label: Text('${_assLogs.length} 件の警告', style: const TextStyle(color: Colors.white)),
+                  label: Text(
+                    '警告・エラー ${_assLogs.length} 件',
+                    style: const TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
             ),

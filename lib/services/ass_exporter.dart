@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import '../models/lyric_ast.dart';
 import '../screens/ass_export_screen.dart';
@@ -50,12 +49,17 @@ class AssExporter {
       fontName: rawSettings.fontName,
       customFontPath: rawSettings.customFontPath,
       singerColors: rawSettings.singerColors,
-      primaryColor: rawSettings.primaryColor,
+      showSingerPrefixesInAss: rawSettings.showSingerPrefixesInAss,
+      sungTextColor: rawSettings.sungTextColor,
+      sungOutlineColor: rawSettings.sungOutlineColor,
+      sungDecorationColor: rawSettings.sungDecorationColor,
+      unsungTextColor: rawSettings.unsungTextColor,
+      unsungOutlineColor: rawSettings.unsungOutlineColor,
+      unsungDecorationColor: rawSettings.unsungDecorationColor,
       fontSize: (rawSettings.fontSize * scale).round(),
       pagingMode: rawSettings.pagingMode,
       interludeThresholdSeconds: rawSettings.interludeThresholdSeconds,
       horizontalMargin: (rawSettings.horizontalMargin * scale).round(),
-      edgeColor: rawSettings.edgeColor,
       outlineWidth: (rawSettings.outlineWidth * scale).round(),
       blurLevel: rawSettings.blurLevel,
       resolutionHeight: rawSettings.resolutionHeight,
@@ -67,25 +71,39 @@ class AssExporter {
     // Pre-calculate line singer mapping
     Map<LyricLine, int> lineSingerMap = {};
     int? currentSingerIdx;
-    
+
     // Sort singer colors by prefix length descending
-    List<SingerColorInfo> sortedSingers = List.from(settings.singerColors);
+    List<SingerColorInfo> sortedSingers = settings.singerColors
+        .where((singer) => singer.prefix.isNotEmpty)
+        .toList();
     sortedSingers.sort((a, b) => b.prefix.length.compareTo(a.prefix.length));
-    
-    for (var line in doc.lines) {
-      String plainText = _getPlainText(line);
+
+    final renderLines = <LyricLine>[];
+    for (var sourceLine in doc.lines) {
+      String plainText = _getPlainText(sourceLine);
+      int? matchedSingerIdx;
       for (int i = 0; i < sortedSingers.length; i++) {
         if (plainText.startsWith(sortedSingers[i].prefix)) {
-          currentSingerIdx = settings.singerColors.indexOf(sortedSingers[i]);
+          matchedSingerIdx = settings.singerColors.indexOf(sortedSingers[i]);
+          currentSingerIdx = matchedSingerIdx;
           break;
         }
       }
+
+      LyricLine renderLine = sourceLine;
+      if (matchedSingerIdx != null && !settings.showSingerPrefixesInAss) {
+        final matchedSinger = settings.singerColors[matchedSingerIdx];
+        renderLine = _withoutLeadingPrefix(sourceLine, matchedSinger.prefix);
+      }
+      renderLines.add(renderLine);
+
       if (currentSingerIdx != null) {
-        lineSingerMap[line] = currentSingerIdx;
+        lineSingerMap[renderLine] = currentSingerIdx;
       }
     }
 
-    final blocks = _groupLinesIntoBlocks(doc, settings);
+    final renderDocument = LyricDocument(lines: renderLines);
+    final blocks = _groupLinesIntoBlocks(renderDocument, settings);
 
     Map<int, Duration> yEndTimes = {};
     Duration lastInterludeEnd = Duration.zero;
@@ -113,7 +131,14 @@ class AssExporter {
         }
       }
 
-      _writeBlock(sb, block, settings, yEndTimes, lastInterludeEnd, lineSingerMap);
+      _writeBlock(
+        sb,
+        block,
+        settings,
+        yEndTimes,
+        lastInterludeEnd,
+        lineSingerMap,
+      );
 
       if (block.lines.isNotEmpty) {
         Duration maxEnd = Duration.zero;
@@ -139,10 +164,51 @@ class AssExporter {
     return sb.toString();
   }
 
+  static LyricLine _withoutLeadingPrefix(LyricLine line, String prefix) {
+    if (prefix.isEmpty || !_getPlainText(line).startsWith(prefix)) return line;
+
+    String remaining = prefix;
+    final nodes = <LyricNode>[];
+    for (final node in line.nodes) {
+      if (remaining.isEmpty || node is LyricTimeTag) {
+        nodes.add(node);
+        continue;
+      }
+
+      String visibleText = '';
+      if (node is LyricText) {
+        visibleText = node.text;
+      } else if (node is LyricRuby) {
+        visibleText = node.baseText;
+      }
+      if (visibleText.isEmpty) {
+        nodes.add(node);
+        continue;
+      }
+
+      if (remaining.length >= visibleText.length &&
+          remaining.startsWith(visibleText)) {
+        remaining = remaining.substring(visibleText.length);
+        continue;
+      }
+
+      if (visibleText.startsWith(remaining)) {
+        final suffix = visibleText.substring(remaining.length);
+        if (suffix.isNotEmpty) nodes.add(LyricText(suffix));
+        remaining = '';
+        continue;
+      }
+
+      return line;
+    }
+
+    return remaining.isEmpty ? LyricLine(nodes: nodes) : line;
+  }
+
   static void _writeHeader(StringBuffer sb, AssExportSettings settings) {
     int playResX = getPlayResX(settings);
     int playResY = getPlayResY(settings);
-    
+
     sb.writeln('[Script Info]');
     sb.writeln('ScriptType: v4.00+');
     sb.writeln('PlayResX: $playResX');
@@ -151,7 +217,10 @@ class AssExporter {
     sb.writeln('ScaledBorderAndShadow: yes');
     sb.writeln('');
 
-    String c = _colorToAss(settings.primaryColor);
+    String sungTextColor = _colorToAss(settings.sungTextColor.color0);
+    String sungOutlineColor = _colorToAss(settings.sungOutlineColor.color0);
+    String unsungTextColor = _colorToAss(settings.unsungTextColor.color0);
+    String unsungOutlineColor = _colorToAss(settings.unsungOutlineColor.color0);
     int fs = settings.fontSize;
     String fn = settings.fontName;
 
@@ -170,19 +239,19 @@ class AssExporter {
       'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     );
     sb.writeln(
-      'Style: DefaultUnsung,$fn,$fs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
+      'Style: DefaultUnsung,$fn,$fs,$unsungTextColor,&H00FFFFFF,$unsungOutlineColor,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: DefaultSung,$fn,$fs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
+      'Style: DefaultSung,$fn,$fs,$sungTextColor,&H00FFFFFF,$sungOutlineColor,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: RubyUnsung,$fn,$rubyFs,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyBaseOutW,0,5,0,0,0,1',
+      'Style: RubyUnsung,$fn,$rubyFs,$unsungTextColor,&H00FFFFFF,$unsungOutlineColor,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyBaseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: RubySung,$fn,$rubyFs,$c,&H00FFFFFF,&H00FFFFFF,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyBaseOutW,0,5,0,0,0,1',
+      'Style: RubySung,$fn,$rubyFs,$sungTextColor,&H00FFFFFF,$sungOutlineColor,&H80000000,-1,0,0,0,100,100,$rubySpacing,0,1,$rubyBaseOutW,0,5,0,0,0,1',
     );
     sb.writeln(
-      'Style: Interlude,$fn,$fs,$c,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
+      'Style: Interlude,$fn,$fs,$sungTextColor,&H00FFFFFF,$unsungOutlineColor,&H80000000,-1,0,0,0,100,100,$spacing,0,1,$baseOutW,0,5,0,0,0,1',
     );
 
     sb.writeln('');
@@ -202,6 +271,187 @@ class AssExporter {
     return '&H00$hexB$hexG$hexR&';
   }
 
+  static Color _colorAt(AssColorValue value, double position) {
+    if (!value.isGradient) return value.color0;
+    return Color.lerp(value.color0, value.color100, position) ?? value.color0;
+  }
+
+  static String _assColorAt(AssColorValue value, double position) {
+    return _colorToAss(_colorAt(value, position));
+  }
+
+  static List<_GradientBand> _gradientBands({
+    required double clipTop,
+    required double clipBottom,
+    required double gradientTop,
+    required double gradientBottom,
+    required bool enabled,
+  }) {
+    if (!enabled || gradientBottom <= gradientTop) {
+      return [
+        _GradientBand(top: clipTop, bottom: clipBottom, position: 0.5),
+      ];
+    }
+
+    const bandCount = 16;
+    final height = gradientBottom - gradientTop;
+    return List.generate(bandCount, (index) {
+      final top = index == 0
+          ? clipTop
+          : gradientTop + height * index / bandCount;
+      final bottom = index == bandCount - 1
+          ? clipBottom
+          : gradientTop + height * (index + 1) / bandCount;
+      return _GradientBand(
+        top: top,
+        bottom: bottom,
+        position: index / (bandCount - 1),
+      );
+    });
+  }
+
+  static void _writeGlowLayers({
+    required StringBuffer sb,
+    required String rawText,
+    required String style,
+    required String alignmentTag,
+    required double posX,
+    required double posY,
+    required double visualY,
+    required double fontSize,
+    required double baseOutlineWidth,
+    required double decorationWidth,
+    required int blurLevel,
+    required int tStart,
+    required int tEnd,
+    required Duration displayStart,
+    required Duration displayEnd,
+    required AssColorValue color,
+    required bool fadesIn,
+  }) {
+    if (decorationWidth <= 0) return;
+
+    final hasGradient = color.isGradient;
+    final bands = _gradientBands(
+      clipTop: visualY - fontSize * 1.5,
+      clipBottom: visualY + fontSize * 1.5,
+      gradientTop: visualY - fontSize * 0.5,
+      gradientBottom: visualY + fontSize * 0.5,
+      enabled: hasGradient,
+    );
+    final numLayers = blurLevel + 1;
+
+    for (int layerIndex = 0; layerIndex < numLayers; layerIndex++) {
+      final layerWidth =
+          decorationWidth - layerIndex * decorationWidth / numLayers;
+      final borderWidth = baseOutlineWidth + layerWidth / 2;
+
+      for (final band in bands) {
+        final assColor = _assColorAt(color, band.position);
+        final clipTag = hasGradient
+            ? '\\clip(0,${band.top.toStringAsFixed(1)},10000,${band.bottom.toStringAsFixed(1)})'
+            : '';
+        final initialAlpha = fadesIn ? 'FF' : '00';
+        final finalAlpha = fadesIn ? '00' : 'FF';
+        final tags =
+            '\\1c$assColor\\3c$assColor'
+            '\\1a&H$initialAlpha&\\3a&H$initialAlpha&'
+            '\\bord${borderWidth.toStringAsFixed(1)}'
+            '\\blur${layerWidth.toStringAsFixed(1)}'
+            '$clipTag'
+            '\\t($tStart,$tEnd,\\1a&H$finalAlpha&\\3a&H$finalAlpha&)';
+
+        sb.writeln(
+          'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},$style,,0,0,0,,{$alignmentTag\\pos(${posX.toStringAsFixed(1)},${posY.toStringAsFixed(1)})$tags}$rawText',
+        );
+      }
+    }
+  }
+
+  static String _buildSegmentedSweepTags({
+    required bool reverse,
+    required double fullLeft,
+    required double fullRight,
+    required double initialX,
+    required double top,
+    required double bottom,
+    required List<_WipeSegment> segments,
+    required int tEnd,
+  }) {
+    String clip(double left, double right) =>
+        '\\clip(${left.toStringAsFixed(1)},${top.toStringAsFixed(1)},${right.toStringAsFixed(1)},${bottom.toStringAsFixed(1)})';
+
+    final tags = StringBuffer(
+      reverse ? clip(fullLeft, fullRight) : clip(initialX, initialX),
+    );
+    if (segments.isNotEmpty) {
+      final first = segments.first;
+      tags.write(
+        '\\t(${first.start},${first.start + 1},${reverse ? clip(first.left, fullRight) : clip(fullLeft, first.left)})',
+      );
+      for (final segment in segments) {
+        tags.write(
+          '\\t(${segment.start + 1},${segment.end},${reverse ? clip(segment.right, fullRight) : clip(fullLeft, segment.right)})',
+        );
+      }
+    }
+    tags.write(
+      reverse
+          ? '\\t($tEnd,${tEnd + 1},\\clip(0,0,0,0))'
+          : '\\t($tEnd,${tEnd + 1},${clip(fullLeft, fullRight)})',
+    );
+    return tags.toString();
+  }
+
+  static void _writeGradientSweepDialogue({
+    required StringBuffer sb,
+    required String rawText,
+    required String style,
+    required String alignmentTag,
+    required double posX,
+    required double posY,
+    required double visualY,
+    required double fontSize,
+    required AssColorValue textColor,
+    required AssColorValue outlineColor,
+    required double fullLeft,
+    required double fullRight,
+    required double initialX,
+    required List<_WipeSegment> segments,
+    required int tEnd,
+    required bool reverse,
+    required Duration displayStart,
+    required Duration displayEnd,
+  }) {
+    final hasGradient = textColor.isGradient || outlineColor.isGradient;
+    final bands = _gradientBands(
+      clipTop: visualY - fontSize * 1.5,
+      clipBottom: visualY + fontSize * 1.5,
+      gradientTop: visualY - fontSize * 0.5,
+      gradientBottom: visualY + fontSize * 0.5,
+      enabled: hasGradient,
+    );
+
+    for (final band in bands) {
+      final colors =
+          '\\1c${_assColorAt(textColor, band.position)}'
+          '\\3c${_assColorAt(outlineColor, band.position)}';
+      final sweep = _buildSegmentedSweepTags(
+        reverse: reverse,
+        fullLeft: fullLeft,
+        fullRight: fullRight,
+        initialX: initialX,
+        top: band.top,
+        bottom: band.bottom,
+        segments: segments,
+        tEnd: tEnd,
+      );
+      sb.writeln(
+        'Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},$style,,0,0,0,,{$alignmentTag\\pos(${posX.toStringAsFixed(1)},${posY.toStringAsFixed(1)})$colors$sweep}$rawText',
+      );
+    }
+  }
+
   static String _formatTime(Duration d) {
     int h = d.inHours;
     int m = d.inMinutes.remainder(60);
@@ -219,6 +469,7 @@ class AssExporter {
         if (s.length == 1) return int.parse(s) * 100;
         return int.parse(s.substring(0, 3));
       }
+
       if (parts.length == 4) {
         int h = int.parse(parts[0]);
         int m = int.parse(parts[1]);
@@ -298,21 +549,23 @@ class AssExporter {
     return lastTime;
   }
 
-
-
   static double _getRubyNodeWidth(LyricRuby node, double fs, double spacing) {
     double baseW = _getCharWidth(node.baseText, fs, spacing);
-    
+
     double rubyFs = fs * 36 / 75;
     double rubySpacing = (rubyFs * 12 / 75).roundToDouble();
     double rubyW = 0;
-    
+
     for (var rNode in node.rubyNodes) {
       if (rNode is LyricText) {
-        rubyW += _getCharWidth(rNode.text.replaceAll('＋', ''), rubyFs, rubySpacing);
+        rubyW += _getCharWidth(
+          rNode.text.replaceAll('＋', ''),
+          rubyFs,
+          rubySpacing,
+        );
       }
     }
-    
+
     return baseW > rubyW ? baseW : rubyW;
   }
 
@@ -357,33 +610,37 @@ class AssExporter {
       final startTime = _getLineStartTime(line);
       final endTime = _getLineEndTime(line, startTime);
 
-      int playResX = getPlayResX(settings);
       double scale = settings.resolutionHeight / 1080.0;
       final double maxLineW = 1800 * scale;
-      
+
       double lineSpacingVal = (fs * 12 / 75).roundToDouble();
       double width = _getLineWidth(line, fs, lineSpacingVal);
 
       Map<LyricNode, Duration> nodeStartTimes = {};
       Map<LyricNode, Duration> nodeEndTimes = {};
-      
+
       List<dynamic> timeElements = [];
       for (int i = 0; i < line.nodes.length; i++) {
         var node = line.nodes[i];
         if (node is LyricTimeTag && node.time.isNotEmpty) {
           timeElements.add(_parseTime(node.time));
         } else if (node is LyricRuby) {
-          if (node.rubyNodes.isNotEmpty && node.rubyNodes.first is LyricTimeTag) {
+          if (node.rubyNodes.isNotEmpty &&
+              node.rubyNodes.first is LyricTimeTag) {
             LyricTimeTag firstTag = node.rubyNodes.first as LyricTimeTag;
             if (firstTag.time.isNotEmpty) {
               timeElements.add(_parseTime(firstTag.time));
             }
           }
           double w = _getRubyNodeWidth(node, fs, lineSpacingVal);
-          timeElements.add(_Atom(node, null, w, Duration.zero, Duration.zero, 10, 0));
+          timeElements.add(
+            _Atom(node, null, w, Duration.zero, Duration.zero, 10, 0),
+          );
         } else if (node is LyricText) {
           double w = _getCharWidth(node.text, fs, lineSpacingVal);
-          timeElements.add(_Atom(node, null, w, Duration.zero, Duration.zero, 10, 0));
+          timeElements.add(
+            _Atom(node, null, w, Duration.zero, Duration.zero, 10, 0),
+          );
         }
       }
 
@@ -398,7 +655,7 @@ class AssExporter {
             for (var a in currentChunk) {
               totalW += a.width;
             }
-            
+
             for (var a in currentChunk) {
               int ms = 0;
               if (totalW > 0) ms = (totalMs * (a.width / totalW)).round();
@@ -442,14 +699,17 @@ class AssExporter {
           if (node is LyricTimeTag && node.time.isNotEmpty) {
             elements.add(_parseTime(node.time));
           } else if (node is LyricRuby) {
-            if (node.rubyNodes.isNotEmpty && node.rubyNodes.first is LyricTimeTag) {
+            if (node.rubyNodes.isNotEmpty &&
+                node.rubyNodes.first is LyricTimeTag) {
               LyricTimeTag firstTag = node.rubyNodes.first as LyricTimeTag;
               if (firstTag.time.isNotEmpty) {
                 elements.add(_parseTime(firstTag.time));
               }
             }
             double w = _getRubyNodeWidth(node, fs, lineSpacingVal);
-            elements.add(_Atom(node, null, w, Duration.zero, Duration.zero, 10, 0));
+            elements.add(
+              _Atom(node, null, w, Duration.zero, Duration.zero, 10, 0),
+            );
           } else if (node is LyricText) {
             String text = node.text;
             List<String> clusters = [];
@@ -466,10 +726,13 @@ class AssExporter {
               int cost = 20;
               if (c == clusters.length - 1) {
                 cost = 10;
-              } else if (cluster.endsWith(' ') || cluster.endsWith('　'))
+              } else if (cluster.endsWith(' ') || cluster.endsWith('　')) {
                 cost = 0;
-              
-              elements.add(_Atom(node, cluster, w, Duration.zero, Duration.zero, cost, 0));
+              }
+
+              elements.add(
+                _Atom(node, cluster, w, Duration.zero, Duration.zero, cost, 0),
+              );
             }
           }
         }
@@ -478,19 +741,19 @@ class AssExporter {
         Duration currentTagTime = startTime;
         double currentAccW = 0;
         List<_Atom> currentChunkAtoms = [];
-        
+
         for (var el in elements) {
           if (el is Duration) {
             if (currentChunkAtoms.isNotEmpty) {
               Duration endTagTime = el;
               int totalMs = (endTagTime - currentTagTime).inMilliseconds;
               if (totalMs < 0) totalMs = 0;
-              
+
               double chunkTotalW = 0;
               for (var a in currentChunkAtoms) {
                 chunkTotalW += a.width;
               }
-              
+
               for (var a in currentChunkAtoms) {
                 int ms = 0;
                 if (chunkTotalW > 0) {
@@ -498,17 +761,19 @@ class AssExporter {
                 }
                 Duration start = currentTagTime;
                 currentTagTime += Duration(milliseconds: ms);
-                
+
                 currentAccW += a.width;
-                atoms.add(_Atom(
-                  a.originalNode,
-                  a.textChar,
-                  a.width,
-                  start,
-                  currentTagTime,
-                  a.cost,
-                  currentAccW,
-                ));
+                atoms.add(
+                  _Atom(
+                    a.originalNode,
+                    a.textChar,
+                    a.width,
+                    start,
+                    currentTagTime,
+                    a.cost,
+                    currentAccW,
+                  ),
+                );
               }
               currentChunkAtoms.clear();
             }
@@ -517,27 +782,28 @@ class AssExporter {
             currentChunkAtoms.add(el);
           }
         }
-        
+
         if (currentChunkAtoms.isNotEmpty) {
-            Duration endTagTime = endTime;
-            int totalMs = (endTagTime - currentTagTime).inMilliseconds;
-            if (totalMs < 0) totalMs = 0;
-            
-            double chunkTotalW = 0;
-            for (var a in currentChunkAtoms) {
-              chunkTotalW += a.width;
+          Duration endTagTime = endTime;
+          int totalMs = (endTagTime - currentTagTime).inMilliseconds;
+          if (totalMs < 0) totalMs = 0;
+
+          double chunkTotalW = 0;
+          for (var a in currentChunkAtoms) {
+            chunkTotalW += a.width;
+          }
+
+          for (var a in currentChunkAtoms) {
+            int ms = 0;
+            if (chunkTotalW > 0) {
+              ms = (totalMs * (a.width / chunkTotalW)).round();
             }
-            
-            for (var a in currentChunkAtoms) {
-              int ms = 0;
-              if (chunkTotalW > 0) {
-                ms = (totalMs * (a.width / chunkTotalW)).round();
-              }
-              Duration start = currentTagTime;
-              currentTagTime += Duration(milliseconds: ms);
-              
-              currentAccW += a.width;
-              atoms.add(_Atom(
+            Duration start = currentTagTime;
+            currentTagTime += Duration(milliseconds: ms);
+
+            currentAccW += a.width;
+            atoms.add(
+              _Atom(
                 a.originalNode,
                 a.textChar,
                 a.width,
@@ -545,8 +811,9 @@ class AssExporter {
                 currentTagTime,
                 a.cost,
                 currentAccW,
-              ));
-            }
+              ),
+            );
+          }
         }
 
         List<List<_Atom>> rowAtoms = [];
@@ -726,13 +993,17 @@ class AssExporter {
         double w = block.lines[i].rowWidths[r];
         if (align == 0 && w > wLeft) {
           wLeft = w;
-        } else if (align == 1 && w > wRight) wRight = w;
-        else if (align == 2 && w > wCenter) wCenter = w;
+        } else if (align == 1 && w > wRight) {
+          wRight = w;
+        } else if (align == 2 && w > wCenter) {
+          wCenter = w;
+        }
       }
     }
 
     double hMargin = settings.horizontalMargin.toDouble();
-    double emptySpace = playResX - (hMargin * 2) - wLeft - wCenter - wRight + fs;
+    double emptySpace =
+        playResX - (hMargin * 2) - wLeft - wCenter - wRight + fs;
     double offset = emptySpace > 0 ? emptySpace / 2 : 0;
 
     final double boxLeft = hMargin + offset;
@@ -749,7 +1020,8 @@ class AssExporter {
     double startY = yLast - ((totalRows - 1) * lineSpacing);
 
     if (settings.pagingMode == AssPagingMode.auto2Lines && totalRows == 1) {
-      Duration expectedDisplayStart = block.lines.first.startTime - const Duration(milliseconds: 3000);
+      Duration expectedDisplayStart =
+          block.lines.first.startTime - const Duration(milliseconds: 3000);
       int roundedYLast = yLast.round();
       if (yEndTimes.containsKey(roundedYLast)) {
         if (expectedDisplayStart < yEndTimes[roundedYLast]!) {
@@ -781,8 +1053,10 @@ class AssExporter {
       if (firstSingStart - preludeStart >= const Duration(milliseconds: 1500)) {
         hasCountdown = true;
         double iconX = boxLeft;
-        if ((settings.pagingMode != AssPagingMode.auto2Lines && totalRows == 1) ||
-            (settings.pagingMode == AssPagingMode.auto2Lines && block.lines.length == 1)) {
+        if ((settings.pagingMode != AssPagingMode.auto2Lines &&
+                totalRows == 1) ||
+            (settings.pagingMode == AssPagingMode.auto2Lines &&
+                block.lines.length == 1)) {
           iconX = centerX - block.lines.first.rowWidths.first / 2;
         }
         double rubyFs = fs * 36 / 75;
@@ -802,37 +1076,62 @@ class AssExporter {
         int tStart = 0;
         int tEnd = fillTime;
 
-        double clipTop = iconY - iconFs;
-        double clipBottom = iconY + iconFs;
-        double cLeft = iconX - outW * 4.0;
+        final nextSingerIndex = lineSingerMap[block.lines.first.astLine];
+        final nextSinger = nextSingerIndex != null
+            ? settings.singerColors[nextSingerIndex]
+            : null;
+        final countdownUnsungTextColor =
+            nextSinger?.unsungTextColor ?? settings.unsungTextColor;
+        final countdownUnsungOutlineColor =
+            nextSinger?.unsungOutlineColor ?? settings.unsungOutlineColor;
+        final countdownSungTextColor =
+            nextSinger?.sungTextColor ?? settings.sungTextColor;
+        final countdownSungOutlineColor =
+            nextSinger?.sungOutlineColor ?? settings.sungOutlineColor;
 
-        double cRight = iconX + totalW + outW * 4.0;
-        
-        String clipInit =
-            '\\clip(${iconX.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${iconX.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-        String clipStart =
-            '\\clip(${cLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${iconX.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-        String clipEnd =
-            '\\clip(${cLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${(iconX + totalW).toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-        String clipFinal =
-            '\\clip(${cLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${cRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-
-        String rClipInit =
-            '\\clip(${cLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${cRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-        String rClipStart =
-            '\\clip(${iconX.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${cRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-        String rClipEnd =
-            '\\clip(${(iconX + totalW).toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${cRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-        String rClipFinal = '\\clip(0,0,0,0)';
-
-        // 1. Unsung Layer (White text, Black outline)
-        sb.writeln(
-          'Dialogue: 0,${_formatTime(preludeStart)},${_formatTime(firstSingStart)},DefaultUnsung,,0,0,0,,{\\fs${iconFs.toInt()}\\an4\\pos(${iconX.toStringAsFixed(1)},${iconY.toStringAsFixed(1)})$rClipInit\\t($tStart,${tStart + 1},$rClipStart)\\t(${tStart + 1},$tEnd,$rClipEnd)\\t($tEnd,${tEnd + 1},$rClipFinal)}●●●',
+        _writeSyllableClip(
+          sb: sb,
+          rawText: '●●●',
+          style: 'DefaultUnsung',
+          alignmentTag: '\\fs${iconFs.toInt()}\\an4',
+          posX: iconX,
+          posY: iconY,
+          x: iconX,
+          y: iconY,
+          w: totalW,
+          outW: outW,
+          tStart: tStart,
+          tEnd: tEnd,
+          displayStart: preludeStart,
+          displayEnd: firstSingStart,
+          fs: iconFs,
+          layer: 0,
+          textColor: countdownUnsungTextColor,
+          outlineColor: countdownUnsungOutlineColor,
+          reverseClip: true,
+          clipHeightFactor: 1.0,
         );
 
-        // 2. Sung Layer (Theme text, White outline)
-        sb.writeln(
-          'Dialogue: 0,${_formatTime(preludeStart)},${_formatTime(firstSingStart)},DefaultSung,,0,0,0,,{\\fs${iconFs.toInt()}\\an4\\pos(${iconX.toStringAsFixed(1)},${iconY.toStringAsFixed(1)})$clipInit\\t($tStart,${tStart + 1},$clipStart)\\t(${tStart + 1},$tEnd,$clipEnd)\\t($tEnd,${tEnd + 1},$clipFinal)}●●●',
+        _writeSyllableClip(
+          sb: sb,
+          rawText: '●●●',
+          style: 'DefaultSung',
+          alignmentTag: '\\fs${iconFs.toInt()}\\an4',
+          posX: iconX,
+          posY: iconY,
+          x: iconX,
+          y: iconY,
+          w: totalW,
+          outW: outW,
+          tStart: tStart,
+          tEnd: tEnd,
+          displayStart: preludeStart,
+          displayEnd: firstSingStart,
+          fs: iconFs,
+          layer: 0,
+          textColor: countdownSungTextColor,
+          outlineColor: countdownSungOutlineColor,
+          clipHeightFactor: 1.0,
         );
       }
     }
@@ -868,7 +1167,8 @@ class AssExporter {
           }
         }
 
-        Duration displayStart = rowStartTime - const Duration(milliseconds: 3000);
+        Duration displayStart =
+            rowStartTime - const Duration(milliseconds: 3000);
         if (i == 0 && r == 0 && preludeStart < displayStart && hasCountdown) {
           displayStart = preludeStart;
         }
@@ -908,7 +1208,17 @@ class AssExporter {
       }
 
       int? sIdx = lineSingerMap[lineData.astLine];
-      _writeLine(sb, lineData, startXs, ys, displayStarts, displayEnds, fs, settings, sIdx);
+      _writeLine(
+        sb,
+        lineData,
+        startXs,
+        ys,
+        displayStarts,
+        displayEnds,
+        fs,
+        settings,
+        sIdx,
+      );
     }
   }
 
@@ -949,8 +1259,18 @@ class AssExporter {
         if (node is LyricTimeTag && node.time.isNotEmpty) {
           currentTagTime = _parseTime(node.time);
         } else if (node is LyricText || node is LyricRuby) {
-          String unsungOutlineColor = sIdx != null ? _colorToAss(settings.singerColors[sIdx].edgeColor) : _colorToAss(settings.edgeColor);
-          String sungOutlineColor = sIdx != null ? _colorToAss(settings.singerColors[sIdx].edgeColor) : '&H96E1FF&';
+          final singer = sIdx != null ? settings.singerColors[sIdx] : null;
+          final sungTextColor = singer?.sungTextColor ?? settings.sungTextColor;
+          final sungOutlineColor =
+              singer?.sungOutlineColor ?? settings.sungOutlineColor;
+          final sungDecorationColor =
+              singer?.sungDecorationColor ?? settings.sungDecorationColor;
+          final unsungTextColor =
+              singer?.unsungTextColor ?? settings.unsungTextColor;
+          final unsungOutlineColor =
+              singer?.unsungOutlineColor ?? settings.unsungOutlineColor;
+          final unsungDecorationColor =
+              singer?.unsungDecorationColor ?? settings.unsungDecorationColor;
           Duration activeTime = lineData.nodeStartTimes[node] ?? currentTagTime;
           Duration nextTagTime = lineData.nodeEndTimes[node] ?? currentTagTime;
           currentTagTime = nextTagTime;
@@ -986,21 +1306,44 @@ class AssExporter {
             int tStart = (activeTime - displayStart).inMilliseconds;
             int tEnd = (nextTagTime - displayStart).inMilliseconds;
 
-            if (outW > 0) {
-              int numLayers = settings.blurLevel + 1;
-              for (int i = 0; i < numLayers; i++) {
-                double layerOutW = outW - (i * outW / numLayers);
-                double glowBord = baseOutW + layerOutW / 2;
-                String glowUnsungTags = '\\1c$unsungOutlineColor\\3c$unsungOutlineColor\\1a&H00&\\3a&H00&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&HFF&\\3a&HFF&)';
-                String glowSungTags = '\\1c$sungOutlineColor\\3c$sungOutlineColor\\1a&HFF&\\3a&HFF&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&H00&\\3a&H00&)';
-                sb.writeln(
-                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an4\\pos(${leftX.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowUnsungTags}${node.text}',
-                );
-                sb.writeln(
-                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an4\\pos(${leftX.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowSungTags}${node.text}',
-                );
-              }
-            }
+            _writeGlowLayers(
+              sb: sb,
+              rawText: node.text,
+              style: 'DefaultUnsung',
+              alignmentTag: '\\an4',
+              posX: leftX,
+              posY: y,
+              visualY: y,
+              fontSize: fs,
+              baseOutlineWidth: baseOutW,
+              decorationWidth: outW,
+              blurLevel: settings.blurLevel,
+              tStart: tStart,
+              tEnd: tEnd,
+              displayStart: displayStart,
+              displayEnd: displayEnd,
+              color: unsungDecorationColor,
+              fadesIn: false,
+            );
+            _writeGlowLayers(
+              sb: sb,
+              rawText: node.text,
+              style: 'DefaultUnsung',
+              alignmentTag: '\\an4',
+              posX: leftX,
+              posY: y,
+              visualY: y,
+              fontSize: fs,
+              baseOutlineWidth: baseOutW,
+              decorationWidth: outW,
+              blurLevel: settings.blurLevel,
+              tStart: tStart,
+              tEnd: tEnd,
+              displayStart: displayStart,
+              displayEnd: displayEnd,
+              color: sungDecorationColor,
+              fadesIn: true,
+            );
 
             _writeSyllableClip(
               sb: sb,
@@ -1020,6 +1363,8 @@ class AssExporter {
               fs: fs,
               layer: 1,
               reverseClip: true,
+              textColor: unsungTextColor,
+              outlineColor: unsungOutlineColor,
             );
 
             _writeSyllableClip(
@@ -1039,6 +1384,8 @@ class AssExporter {
               displayEnd: displayEnd,
               fs: fs,
               layer: 1,
+              textColor: sungTextColor,
+              outlineColor: sungOutlineColor,
             );
           } else if (node is LyricRuby) {
             double cx = currentX + w / 2;
@@ -1046,21 +1393,44 @@ class AssExporter {
             int tStart = (activeTime - displayStart).inMilliseconds;
             int tEnd = (nextTagTime - displayStart).inMilliseconds;
 
-            if (outW > 0) {
-              int numLayers = settings.blurLevel + 1;
-              for (int i = 0; i < numLayers; i++) {
-                double layerOutW = outW - (i * outW / numLayers);
-                double glowBord = baseOutW + layerOutW / 2;
-                String baseGlowUnsungTags = '\\1c$unsungOutlineColor\\3c$unsungOutlineColor\\1a&H00&\\3a&H00&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&HFF&\\3a&HFF&)';
-                String baseGlowSungTags = '\\1c$sungOutlineColor\\3c$sungOutlineColor\\1a&HFF&\\3a&HFF&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&H00&\\3a&H00&)';
-                sb.writeln(
-                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseGlowUnsungTags}${node.baseText}',
-                );
-                sb.writeln(
-                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseGlowSungTags}${node.baseText}',
-                );
-              }
-            }
+            _writeGlowLayers(
+              sb: sb,
+              rawText: node.baseText,
+              style: 'DefaultUnsung',
+              alignmentTag: '\\an5',
+              posX: adjustedCx,
+              posY: y,
+              visualY: y,
+              fontSize: fs,
+              baseOutlineWidth: baseOutW,
+              decorationWidth: outW,
+              blurLevel: settings.blurLevel,
+              tStart: tStart,
+              tEnd: tEnd,
+              displayStart: displayStart,
+              displayEnd: displayEnd,
+              color: unsungDecorationColor,
+              fadesIn: false,
+            );
+            _writeGlowLayers(
+              sb: sb,
+              rawText: node.baseText,
+              style: 'DefaultUnsung',
+              alignmentTag: '\\an5',
+              posX: adjustedCx,
+              posY: y,
+              visualY: y,
+              fontSize: fs,
+              baseOutlineWidth: baseOutW,
+              decorationWidth: outW,
+              blurLevel: settings.blurLevel,
+              tStart: tStart,
+              tEnd: tEnd,
+              displayStart: displayStart,
+              displayEnd: displayEnd,
+              color: sungDecorationColor,
+              fadesIn: true,
+            );
 
             double rubyY = y - fs * 0.9;
             double rw = 0;
@@ -1071,29 +1441,19 @@ class AssExporter {
               }
             }
 
-
-            double clipTop = y - fs * 1.5;
-            double clipBottom = y + fs * 1.5;
             double kLeft = currentX - (baseOutW + outW) * 4.0;
             double kRight = currentX + w + (baseOutW + outW) * 4.0;
 
-            String baseSungSweep = '\\clip(${currentX.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${currentX.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-            String baseUnsungSweep = '\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-
-            double rClipTop = rubyY - rubyFs * 1.5;
-            double rClipBottom = rubyY + rubyFs * 1.5;
-
-
-            bool isFirstSegment = true;
-            
             List<String> baseChars = node.baseText.characters.toList();
-            List<double> baseWidths = baseChars.map((c) => _getCharWidth(c, fs, spacing)).toList();
+            List<double> baseWidths = baseChars
+                .map((c) => _getCharWidth(c, fs, spacing))
+                .toList();
             double totalBaseW = baseWidths.fold(0.0, (a, b) => a + b);
-            
+
             List<Map<String, dynamic>> chunks = [];
             Duration currentChunkStart = activeTime;
             String currentChunkText = '';
-            
+
             bool hasFirstTag = false;
 
             for (int rIdx = 0; rIdx < node.rubyNodes.length; rIdx++) {
@@ -1154,76 +1514,179 @@ class AssExporter {
             double rkLeft = currentRubyX - (rubyBaseOutW + rubyOut) * 4.0;
             double rkRight = currentRubyX + rw + (rubyBaseOutW + rubyOut) * 4.0;
 
-            String rubySungSweep = '\\clip(${currentRubyX.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${currentRubyX.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)})';
-            String rubyUnsungSweep = '\\clip(${rkLeft.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${rkRight.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)})';
-
             int numSegments = chunks.length;
             int segmentIdx = 0;
             double accumulatedBasePercentage = 0;
+            final baseSegments = <_WipeSegment>[];
+            final rubySegments = <_WipeSegment>[];
 
             for (var chunk in chunks) {
-                int rStart = (chunk['start'] as Duration).inMilliseconds - displayStart.inMilliseconds;
-                int rEnd = (chunk['end'] as Duration).inMilliseconds - displayStart.inMilliseconds;
+              int rStart =
+                  (chunk['start'] as Duration).inMilliseconds -
+                  displayStart.inMilliseconds;
+              int rEnd =
+                  (chunk['end'] as Duration).inMilliseconds -
+                  displayStart.inMilliseconds;
 
-                double percentage;
-                if (numSegments == baseChars.length && totalBaseW > 0) {
-                  percentage = baseWidths[segmentIdx] / totalBaseW;
-                } else {
-                  percentage = (totalLogicalW > 0) ? ((chunk['logicalW'] as double) / totalLogicalW) : 1.0;
-                }
-
-                double sliceW = w * percentage;
-                double sliceLeftX = currentX + w * accumulatedBasePercentage;
-                double sliceRightX = sliceLeftX + sliceW;
-
-                double rSliceW = rw * percentage;
-                double rSliceLeftX = currentRubyX + rw * accumulatedBasePercentage;
-                double rSliceRightX = rSliceLeftX + rSliceW;
-
-                if (isFirstSegment) {
-                  baseSungSweep += '\\t($rStart,${rStart + 1},\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${sliceLeftX.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)}))';
-                  baseUnsungSweep += '\\t($rStart,${rStart + 1},\\clip(${sliceLeftX.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)}))';
-                  
-                  rubySungSweep += '\\t($rStart,${rStart + 1},\\clip(${rkLeft.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${rSliceLeftX.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)}))';
-                  rubyUnsungSweep += '\\t($rStart,${rStart + 1},\\clip(${rSliceLeftX.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${rkRight.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)}))';
-                  
-                  isFirstSegment = false;
-                }
-                
-                baseSungSweep += '\\t(${rStart + 1},$rEnd,\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${sliceRightX.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)}))';
-                baseUnsungSweep += '\\t(${rStart + 1},$rEnd,\\clip(${sliceRightX.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)}))';
-
-                rubySungSweep += '\\t(${rStart + 1},$rEnd,\\clip(${rkLeft.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${rSliceRightX.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)}))';
-                rubyUnsungSweep += '\\t(${rStart + 1},$rEnd,\\clip(${rSliceRightX.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${rkRight.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)}))';
-
-                segmentIdx++;
-                accumulatedBasePercentage += percentage;
-            }
-
-            baseSungSweep += '\\t($tEnd,${tEnd + 1},\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)}))';
-            baseUnsungSweep += '\\t($tEnd,${tEnd + 1},\\clip(0,0,0,0))';
-
-            rubySungSweep += '\\t($tEnd,${tEnd + 1},\\clip(${rkLeft.toStringAsFixed(1)},${rClipTop.toStringAsFixed(1)},${rkRight.toStringAsFixed(1)},${rClipBottom.toStringAsFixed(1)}))';
-            rubyUnsungSweep += '\\t($tEnd,${tEnd + 1},\\clip(0,0,0,0))';
-
-            sb.writeln('Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseUnsungSweep}${node.baseText}');
-            sb.writeln('Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultSung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$baseSungSweep}${node.baseText}');
-
-            if (visibleText.isNotEmpty) {
-              if (rubyOut > 0) {
-                int numLayers = settings.blurLevel + 1;
-                for (int i = 0; i < numLayers; i++) {
-                  double layerRubyOutW = rubyOut - (i * rubyOut / numLayers);
-                  double glowRubyBord = rubyBaseOutW + layerRubyOutW / 2;
-                  String rubyGlowUnsungTags = '\\1c$unsungOutlineColor\\3c$unsungOutlineColor\\1a&H00&\\3a&H00&\\bord${glowRubyBord.toStringAsFixed(1)}\\blur${layerRubyOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&HFF&\\3a&HFF&)';
-                  String rubyGlowSungTags = '\\1c$sungOutlineColor\\3c$sungOutlineColor\\1a&HFF&\\3a&HFF&\\bord${glowRubyBord.toStringAsFixed(1)}\\blur${layerRubyOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&H00&\\3a&H00&)';
-                  sb.writeln('Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyGlowUnsungTags}$visibleText');
-                  sb.writeln('Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyGlowSungTags}$visibleText');
-                }
+              double percentage;
+              if (numSegments == baseChars.length && totalBaseW > 0) {
+                percentage = baseWidths[segmentIdx] / totalBaseW;
+              } else {
+                percentage = (totalLogicalW > 0)
+                    ? ((chunk['logicalW'] as double) / totalLogicalW)
+                    : 1.0;
               }
 
-              sb.writeln('Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubyUnsung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubyUnsungSweep}$visibleText');
-              sb.writeln('Dialogue: 1,${_formatTime(displayStart)},${_formatTime(displayEnd)},RubySung,,0,0,0,,{\\an5\\pos(${adjustedRubyCx.toStringAsFixed(1)},${rubyY.toStringAsFixed(1)})$rubySungSweep}$visibleText');
+              double sliceW = w * percentage;
+              double sliceLeftX = currentX + w * accumulatedBasePercentage;
+              double sliceRightX = sliceLeftX + sliceW;
+
+              double rSliceW = rw * percentage;
+              double rSliceLeftX =
+                  currentRubyX + rw * accumulatedBasePercentage;
+              double rSliceRightX = rSliceLeftX + rSliceW;
+
+              baseSegments.add(
+                _WipeSegment(
+                  start: rStart,
+                  end: rEnd,
+                  left: sliceLeftX,
+                  right: sliceRightX,
+                ),
+              );
+              rubySegments.add(
+                _WipeSegment(
+                  start: rStart,
+                  end: rEnd,
+                  left: rSliceLeftX,
+                  right: rSliceRightX,
+                ),
+              );
+
+              segmentIdx++;
+              accumulatedBasePercentage += percentage;
+            }
+
+            _writeGradientSweepDialogue(
+              sb: sb,
+              rawText: node.baseText,
+              style: 'DefaultUnsung',
+              alignmentTag: '\\an5',
+              posX: adjustedCx,
+              posY: y,
+              visualY: y,
+              fontSize: fs,
+              textColor: unsungTextColor,
+              outlineColor: unsungOutlineColor,
+              fullLeft: kLeft,
+              fullRight: kRight,
+              initialX: currentX,
+              segments: baseSegments,
+              tEnd: tEnd,
+              reverse: true,
+              displayStart: displayStart,
+              displayEnd: displayEnd,
+            );
+            _writeGradientSweepDialogue(
+              sb: sb,
+              rawText: node.baseText,
+              style: 'DefaultSung',
+              alignmentTag: '\\an5',
+              posX: adjustedCx,
+              posY: y,
+              visualY: y,
+              fontSize: fs,
+              textColor: sungTextColor,
+              outlineColor: sungOutlineColor,
+              fullLeft: kLeft,
+              fullRight: kRight,
+              initialX: currentX,
+              segments: baseSegments,
+              tEnd: tEnd,
+              reverse: false,
+              displayStart: displayStart,
+              displayEnd: displayEnd,
+            );
+
+            if (visibleText.isNotEmpty) {
+              _writeGlowLayers(
+                sb: sb,
+                rawText: visibleText,
+                style: 'RubyUnsung',
+                alignmentTag: '\\an5',
+                posX: adjustedRubyCx,
+                posY: rubyY,
+                visualY: rubyY,
+                fontSize: rubyFs,
+                baseOutlineWidth: rubyBaseOutW,
+                decorationWidth: rubyOut,
+                blurLevel: settings.blurLevel,
+                tStart: tStart,
+                tEnd: tEnd,
+                displayStart: displayStart,
+                displayEnd: displayEnd,
+                color: unsungDecorationColor,
+                fadesIn: false,
+              );
+              _writeGlowLayers(
+                sb: sb,
+                rawText: visibleText,
+                style: 'RubyUnsung',
+                alignmentTag: '\\an5',
+                posX: adjustedRubyCx,
+                posY: rubyY,
+                visualY: rubyY,
+                fontSize: rubyFs,
+                baseOutlineWidth: rubyBaseOutW,
+                decorationWidth: rubyOut,
+                blurLevel: settings.blurLevel,
+                tStart: tStart,
+                tEnd: tEnd,
+                displayStart: displayStart,
+                displayEnd: displayEnd,
+                color: sungDecorationColor,
+                fadesIn: true,
+              );
+              _writeGradientSweepDialogue(
+                sb: sb,
+                rawText: visibleText,
+                style: 'RubyUnsung',
+                alignmentTag: '\\an5',
+                posX: adjustedRubyCx,
+                posY: rubyY,
+                visualY: rubyY,
+                fontSize: rubyFs,
+                textColor: unsungTextColor,
+                outlineColor: unsungOutlineColor,
+                fullLeft: rkLeft,
+                fullRight: rkRight,
+                initialX: currentRubyX,
+                segments: rubySegments,
+                tEnd: tEnd,
+                reverse: true,
+                displayStart: displayStart,
+                displayEnd: displayEnd,
+              );
+              _writeGradientSweepDialogue(
+                sb: sb,
+                rawText: visibleText,
+                style: 'RubySung',
+                alignmentTag: '\\an5',
+                posX: adjustedRubyCx,
+                posY: rubyY,
+                visualY: rubyY,
+                fontSize: rubyFs,
+                textColor: sungTextColor,
+                outlineColor: sungOutlineColor,
+                fullLeft: rkLeft,
+                fullRight: rkRight,
+                initialX: currentRubyX,
+                segments: rubySegments,
+                tEnd: tEnd,
+                reverse: false,
+                displayStart: displayStart,
+                displayEnd: displayEnd,
+              );
             }
           }
           currentX += w;
@@ -1249,49 +1712,92 @@ class AssExporter {
     required Duration displayEnd,
     required double fs,
     required int layer,
+    required AssColorValue textColor,
+    required AssColorValue outlineColor,
     bool reverseClip = false,
+    double clipHeightFactor = 1.5,
   }) {
-    double clipTop = y - fs * 1.5;
-    double clipBottom = y + fs * 1.5;
+    double clipTop = y - fs * clipHeightFactor;
+    double clipBottom = y + fs * clipHeightFactor;
     double kLeft = x - outW * 4.0;
     double kRight = x + w + outW * 4.0;
-
-    String tags =
-        '{$alignmentTag\\pos(${posX.toStringAsFixed(1)},${posY.toStringAsFixed(1)})';
-
-    if (reverseClip) {
-      String clipInit =
-          '\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-      String clipStart =
-          '\\clip(${x.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-      String clipEnd =
-          '\\clip(${(x + w).toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-      String clipFinal = '\\clip(0,0,0,0)';
-
-      tags += '$clipInit'
-          '\\t($tStart,${tStart + 1},$clipStart)'
-          '\\t(${tStart + 1},$tEnd,$clipEnd)'
-          '\\t($tEnd,${tEnd + 1},$clipFinal)}';
-    } else {
-      String clipInit =
-          '\\clip(${x.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${x.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-      String clipStart =
-          '\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${x.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-      String clipEnd =
-          '\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${(x + w).toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-      String clipFinal =
-          '\\clip(${kLeft.toStringAsFixed(1)},${clipTop.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${clipBottom.toStringAsFixed(1)})';
-
-      tags += '$clipInit'
-          '\\t($tStart,${tStart + 1},$clipStart)'
-          '\\t(${tStart + 1},$tEnd,$clipEnd)'
-          '\\t($tEnd,${tEnd + 1},$clipFinal)}';
-    }
-
-    sb.writeln(
-      'Dialogue: $layer,${_formatTime(displayStart)},${_formatTime(displayEnd)},$style,,0,0,0,,$tags$rawText',
+    final bands = _gradientBands(
+      clipTop: clipTop,
+      clipBottom: clipBottom,
+      gradientTop: y - fs * 0.5,
+      gradientBottom: y + fs * 0.5,
+      enabled: textColor.isGradient || outlineColor.isGradient,
     );
+
+    for (final band in bands) {
+      final colors =
+          '\\1c${_assColorAt(textColor, band.position)}'
+          '\\3c${_assColorAt(outlineColor, band.position)}';
+      String tags =
+          '{$alignmentTag\\pos(${posX.toStringAsFixed(1)},${posY.toStringAsFixed(1)})$colors';
+
+      if (reverseClip) {
+        String clipInit =
+            '\\clip(${kLeft.toStringAsFixed(1)},${band.top.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${band.bottom.toStringAsFixed(1)})';
+        String clipStart =
+            '\\clip(${x.toStringAsFixed(1)},${band.top.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${band.bottom.toStringAsFixed(1)})';
+        String clipEnd =
+            '\\clip(${(x + w).toStringAsFixed(1)},${band.top.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${band.bottom.toStringAsFixed(1)})';
+        String clipFinal = '\\clip(0,0,0,0)';
+
+        tags +=
+            '$clipInit'
+            '\\t($tStart,${tStart + 1},$clipStart)'
+            '\\t(${tStart + 1},$tEnd,$clipEnd)'
+            '\\t($tEnd,${tEnd + 1},$clipFinal)}';
+      } else {
+        String clipInit =
+            '\\clip(${x.toStringAsFixed(1)},${band.top.toStringAsFixed(1)},${x.toStringAsFixed(1)},${band.bottom.toStringAsFixed(1)})';
+        String clipStart =
+            '\\clip(${kLeft.toStringAsFixed(1)},${band.top.toStringAsFixed(1)},${x.toStringAsFixed(1)},${band.bottom.toStringAsFixed(1)})';
+        String clipEnd =
+            '\\clip(${kLeft.toStringAsFixed(1)},${band.top.toStringAsFixed(1)},${(x + w).toStringAsFixed(1)},${band.bottom.toStringAsFixed(1)})';
+        String clipFinal =
+            '\\clip(${kLeft.toStringAsFixed(1)},${band.top.toStringAsFixed(1)},${kRight.toStringAsFixed(1)},${band.bottom.toStringAsFixed(1)})';
+
+        tags +=
+            '$clipInit'
+            '\\t($tStart,${tStart + 1},$clipStart)'
+            '\\t(${tStart + 1},$tEnd,$clipEnd)'
+            '\\t($tEnd,${tEnd + 1},$clipFinal)}';
+      }
+
+      sb.writeln(
+        'Dialogue: $layer,${_formatTime(displayStart)},${_formatTime(displayEnd)},$style,,0,0,0,,$tags$rawText',
+      );
+    }
   }
+}
+
+class _GradientBand {
+  final double top;
+  final double bottom;
+  final double position;
+
+  const _GradientBand({
+    required this.top,
+    required this.bottom,
+    required this.position,
+  });
+}
+
+class _WipeSegment {
+  final int start;
+  final int end;
+  final double left;
+  final double right;
+
+  const _WipeSegment({
+    required this.start,
+    required this.end,
+    required this.left,
+    required this.right,
+  });
 }
 
 class _Atom {

@@ -87,31 +87,13 @@ class _TaggingButtonState extends State<TaggingButton> {
               },
               onTap: () {}, // Required to trigger material splash
               child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Ciallo～(∠・ω< )⌒☆',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 3.0,
-                        color: Colors.white,
-                      ),
-                    ),
-                    if (active)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 2.0),
-                        child: Text(
-                          'Ciallo～(∠・ω< )⌒☆',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white70,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                  ],
+                child: Text(
+                  'Ciallo～(∠・ω< )⌒★',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),

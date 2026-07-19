@@ -50,7 +50,7 @@ class WaveformExtractorRouter {
       return WaveformExtractor.parsePcmFile(outputFile, sampleRate, samplesPerPixel);
     } else {
       debugPrint('FFmpeg stderr: ${result.stderr}');
-      throw Exception('FFmpeg 处理失败: ${result.stderr}');
+      throw Exception('FFmpeg の処理に失敗しました：${result.stderr}');
     }
   }
 }

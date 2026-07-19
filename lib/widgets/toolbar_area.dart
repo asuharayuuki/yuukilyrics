@@ -89,7 +89,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                   children: [
                     // Play / Pause
                     _buildToolBtn(
-                      tooltip: 'Play / Pause',
+                      tooltip: '再生／一時停止',
                       icon: ListenableBuilder(
                         listenable: widget.mediaPlayer,
                         builder: (_, child) => Icon(
@@ -110,7 +110,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                         final isTagging =
                             widget.lyricsState.activeCursor != null;
                         return _buildToolBtn(
-                          tooltip: isTagging ? 'Stop Tagging' : 'Start Tagging',
+                          tooltip: isTagging ? 'タグ打ちを終了' : 'タグ打ちを開始',
                           icon: Icon(
                             isTagging
                                 ? Icons.stop_circle_outlined
@@ -130,42 +130,42 @@ class _ToolbarAreaState extends State<ToolbarArea> {
 
                     // Add Cursor
                     _buildToolBtn(
-                      tooltip: 'カーソルを追加 (Add Cursor)',
+                      tooltip: 'チェックを追加',
                       icon: const Icon(Icons.add_circle_outline),
                       onPressed: widget.lyricsState.addCursorToSelected,
                     ),
 
                     // Remove Cursor
                     _buildToolBtn(
-                      tooltip: 'カーソルを削除 (Remove Cursor)',
+                      tooltip: 'チェックを削除',
                       icon: const Icon(Icons.remove_circle_outline),
                       onPressed: widget.lyricsState.removeCursorFromSelected,
                     ),
 
                     // Merge with next
                     _buildToolBtn(
-                      tooltip: '次の文字と結合 (Merge with Next)',
+                      tooltip: '次の文字と結合',
                       icon: const Icon(Icons.merge_type),
                       onPressed: widget.lyricsState.mergeSelectedWithNext,
                     ),
 
                     // Link Ruby (Merge Kana)
                     _buildToolBtn(
-                      tooltip: 'ルビを結合 (Link Ruby)',
+                      tooltip: 'ルビを連結',
                       icon: const Icon(Icons.link),
                       onPressed: widget.lyricsState.linkRubySegments,
                     ),
 
                     // Split
                     _buildToolBtn(
-                      tooltip: '分割 (Split Node)',
+                      tooltip: '文字を分割',
                       icon: const Icon(Icons.call_split),
                       onPressed: widget.lyricsState.splitSelectedNode,
                     ),
 
                     // Toggle 10 Tag
                     _buildToolBtn(
-                      tooltip: '10タグを追加/削除',
+                      tooltip: 'キーアップチェックを追加／削除',
                       icon: const Icon(Icons.stop),
                       onPressed: widget.lyricsState.toggleEndTag,
                     ),
@@ -174,7 +174,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
 
                     // Auto Ruby & Tag (Combined)
                     _buildToolBtn(
-                      tooltip: '自動ルビ＆タグ付け (Auto Ruby & Tag)',
+                      tooltip: '自動ルビ・チェック付加',
                       icon: const Icon(Icons.auto_fix_high),
                       onPressed: () =>
                           widget.lyricsState.autoRubyAndTagDocument(context),
@@ -184,7 +184,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
 
                     // Seek backward 1500ms
                     _buildToolBtn(
-                      tooltip: '1.5秒 戻る',
+                      tooltip: '1.5 秒戻る',
                       icon: const Icon(Icons.fast_rewind),
                       onPressed: () {
                         final pos = widget.mediaPlayer.position;
@@ -201,7 +201,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
 
                     // Seek forward 1000ms
                     _buildToolBtn(
-                      tooltip: '1秒 進む',
+                      tooltip: '1 秒進む',
                       icon: const Icon(Icons.fast_forward),
                       onPressed: () {
                         final pos = widget.mediaPlayer.position;
@@ -220,7 +220,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                         final isOffsetModified =
                             widget.lyricsState.taggingOffsetMs != -230;
                         return _buildToolBtn(
-                          tooltip: 'タグ付けオフセット設定 (Tagging Offset)',
+                          tooltip: 'タイムタグ入力オフセット',
                           icon: const Icon(Icons.timer_outlined),
                           onPressed: _showOffsetDialog,
                           color: isOffsetModified ? colorScheme.primary : null,
@@ -234,7 +234,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                       builder: (_, child) {
                         final isShiftMode = widget.lyricsState.isGlobalTimeShiftMode;
                         return _buildToolBtn(
-                          tooltip: isShiftMode ? '確定 (Apply Shift)' : '時間轴全体调整 (Global Time Shift)',
+                          tooltip: isShiftMode ? '一括調整を確定' : 'タイムタグ一括調整',
                           icon: Icon(isShiftMode ? Icons.check : Icons.compare_arrows),
                           color: isShiftMode ? Colors.orange : null,
                           onPressed: () {
@@ -255,7 +255,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                         final isSpeedModified =
                             (widget.mediaPlayer.rate - 1.0).abs() > 0.01;
                         return _buildToolBtn(
-                          tooltip: '再生速度 (Playback Speed)',
+                          tooltip: '再生速度',
                           icon: const Icon(Icons.speed),
                           onPressed: _showSpeedDialog,
                           color: isSpeedModified ? colorScheme.primary : null,
@@ -310,16 +310,16 @@ class _ToolbarAreaState extends State<ToolbarArea> {
 
   Widget _buildRubyEditor(ColorScheme cs) {
     final node = widget.lyricsState.getSelectedNode();
-    String label = '読み: ';
+    String label = 'ルビ：';
     if (node is LyricRuby) {
-      label = '${node.baseText}: ';
+      label = '${node.baseText}：';
     } else if (node is LyricText) {
       final sel = widget.lyricsState.selectionPath;
       if (sel != null &&
           sel.length > 2 &&
           sel[2] >= 0 &&
           sel[2] < node.text.length) {
-        label = '${node.text[sel[2]]}: ';
+        label = '${node.text[sel[2]]}：';
       }
     }
 
@@ -345,7 +345,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
               decoration: const InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
-                hintText: 'Enter reading (e.g. こう)',
+                hintText: 'ルビを入力（例：こう）',
               ),
               onSubmitted: (_) {
                 widget.lyricsState.updateRubyText(_rubyCtrl.text);
@@ -396,7 +396,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                 widget.mediaPlayer.setRate(rate);
                 Navigator.pop(ctx);
               },
-              child: const Text('確認'),
+              child: const Text('適用'),
             ),
           ],
         );
@@ -410,13 +410,13 @@ class _ToolbarAreaState extends State<ToolbarArea> {
       builder: (ctx) {
         int offset = widget.lyricsState.taggingOffsetMs;
         return AlertDialog(
-          title: const Text('タグ付けのタイムオフセット'),
+          title: const Text('タイムタグ入力オフセット'),
           content: StatefulBuilder(
             builder: (ctx, ss) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '${offset}ms',
+                  '$offset ms',
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -424,7 +424,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  offset < 0 ? '時間を早める ${-offset}ms' : '時間を遅らせる ${offset}ms',
+                  offset < 0 ? '入力時刻を ${-offset} ms早める' : '入力時刻を $offset ms遅らせる',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.white.withAlpha(150),
@@ -435,11 +435,11 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                   min: -500,
                   max: 100,
                   divisions: 60,
-                  label: '${offset}ms',
+                  label: '$offset ms',
                   onChanged: (v) => ss(() => offset = v.round()),
                 ),
                 const Text(
-                  '人間の反応遅延を補正\nオリジナル版のデフォルト: -230ms',
+                  '操作時の反応遅延を補正します\n初期値：-230 ms',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 11, color: Colors.white54),
                 ),
@@ -457,7 +457,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                 setState(() {});
                 Navigator.pop(ctx);
               },
-              child: const Text('確認'),
+              child: const Text('適用'),
             ),
           ],
         );

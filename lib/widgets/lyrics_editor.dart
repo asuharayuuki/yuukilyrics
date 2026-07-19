@@ -447,7 +447,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
                                   vertical: 12.0,
                                   horizontal: 16.0,
                                 ),
-                                hintText: 'Ciallo～(∠・ω< )⌒☆',
+                                hintText: '歌詞を入力してください',
                                 isDense: true,
                               ),
                               onChanged: widget.lyricsState.updateFromRawText,
@@ -472,7 +472,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
     if (doc == null || doc.lines.isEmpty) {
       return Center(
         child: Text(
-          'Ciallo～(∠・ω< )⌒☆',
+          '歌詞ファイルを開くか、テキスト編集モードで歌詞を入力してください。',
           textAlign: TextAlign.center,
           style: TextStyle(color: Colors.white.withAlpha(100)),
         ),

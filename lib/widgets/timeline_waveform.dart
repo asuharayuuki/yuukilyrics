@@ -36,7 +36,7 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
     if (widget.waveformData == null) {
       return Center(
         child: Text(
-          'Ciallo～(∠・ω< )⌒☆',
+          'メディアファイルを開いてください。',
           style: TextStyle(
             color: Colors.white.withAlpha(76),
             fontWeight: FontWeight.w600,
