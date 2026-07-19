@@ -1,6 +1,5 @@
 
 import 'package:flutter/material.dart';
-import 'package:characters/characters.dart';
 import '../models/lyric_ast.dart';
 import '../screens/ass_export_screen.dart';
 
@@ -214,7 +213,7 @@ class AssExporter {
   static Duration _parseTime(String timeStr) {
     try {
       final parts = timeStr.replaceAll('.', ':').split(':');
-      int _parseMs(String s) {
+      int parseMs(String s) {
         if (s.length == 3) return int.parse(s);
         if (s.length == 2) return int.parse(s) * 10;
         if (s.length == 1) return int.parse(s) * 100;
@@ -224,12 +223,12 @@ class AssExporter {
         int h = int.parse(parts[0]);
         int m = int.parse(parts[1]);
         int s = int.parse(parts[2]);
-        int ms = _parseMs(parts[3]);
+        int ms = parseMs(parts[3]);
         return Duration(hours: h, minutes: m, seconds: s, milliseconds: ms);
       } else if (parts.length == 3) {
         int m = int.parse(parts[0]);
         int s = int.parse(parts[1]);
-        int ms = _parseMs(parts[2]);
+        int ms = parseMs(parts[2]);
         return Duration(minutes: m, seconds: s, milliseconds: ms);
       } else if (parts.length == 2) {
         int m = int.parse(parts[0]);
@@ -268,12 +267,14 @@ class AssExporter {
 
   static Duration _getLineStartTime(LyricLine line) {
     for (var node in line.nodes) {
-      if (node is LyricTimeTag && node.time.isNotEmpty)
+      if (node is LyricTimeTag && node.time.isNotEmpty) {
         return _parseTime(node.time);
+      }
       if (node is LyricRuby) {
         for (var rNode in node.rubyNodes) {
-          if (rNode is LyricTimeTag && rNode.time.isNotEmpty)
+          if (rNode is LyricTimeTag && rNode.time.isNotEmpty) {
             return _parseTime(rNode.time);
+          }
         }
       }
     }
@@ -394,7 +395,9 @@ class AssExporter {
             int totalMs = (el - chunkTime).inMilliseconds;
             if (totalMs < 0) totalMs = 0;
             double totalW = 0;
-            for (var a in currentChunk) totalW += a.width;
+            for (var a in currentChunk) {
+              totalW += a.width;
+            }
             
             for (var a in currentChunk) {
               int ms = 0;
@@ -414,7 +417,9 @@ class AssExporter {
         int totalMs = (endTime - chunkTime).inMilliseconds;
         if (totalMs < 0) totalMs = 0;
         double totalW = 0;
-        for (var a in currentChunk) totalW += a.width;
+        for (var a in currentChunk) {
+          totalW += a.width;
+        }
         for (var a in currentChunk) {
           int ms = 0;
           if (totalW > 0) ms = (totalMs * (a.width / totalW)).round();
@@ -459,9 +464,9 @@ class AssExporter {
               String cluster = clusters[c];
               double w = _getCharWidth(cluster, fs, lineSpacingVal);
               int cost = 20;
-              if (c == clusters.length - 1)
+              if (c == clusters.length - 1) {
                 cost = 10;
-              else if (cluster.endsWith(' ') || cluster.endsWith('　'))
+              } else if (cluster.endsWith(' ') || cluster.endsWith('　'))
                 cost = 0;
               
               elements.add(_Atom(node, cluster, w, Duration.zero, Duration.zero, cost, 0));
@@ -482,7 +487,9 @@ class AssExporter {
               if (totalMs < 0) totalMs = 0;
               
               double chunkTotalW = 0;
-              for (var a in currentChunkAtoms) chunkTotalW += a.width;
+              for (var a in currentChunkAtoms) {
+                chunkTotalW += a.width;
+              }
               
               for (var a in currentChunkAtoms) {
                 int ms = 0;
@@ -517,7 +524,9 @@ class AssExporter {
             if (totalMs < 0) totalMs = 0;
             
             double chunkTotalW = 0;
-            for (var a in currentChunkAtoms) chunkTotalW += a.width;
+            for (var a in currentChunkAtoms) {
+              chunkTotalW += a.width;
+            }
             
             for (var a in currentChunkAtoms) {
               int ms = 0;
@@ -715,8 +724,9 @@ class AssExporter {
       int align = getAlign(slot, block.lines.length, settings.pagingMode);
       for (int r = 0; r < block.lines[i].rows.length; r++) {
         double w = block.lines[i].rowWidths[r];
-        if (align == 0 && w > wLeft) wLeft = w;
-        else if (align == 1 && w > wRight) wRight = w;
+        if (align == 0 && w > wLeft) {
+          wLeft = w;
+        } else if (align == 1 && w > wRight) wRight = w;
         else if (align == 2 && w > wCenter) wCenter = w;
       }
     }
@@ -972,8 +982,7 @@ class AssExporter {
           }
 
           if (node is LyricText) {
-            double cx = currentX + w / 2;
-            double adjustedCx = cx + spacing / 2;
+            double leftX = currentX + spacing / 2;
             int tStart = (activeTime - displayStart).inMilliseconds;
             int tEnd = (nextTagTime - displayStart).inMilliseconds;
 
@@ -985,10 +994,10 @@ class AssExporter {
                 String glowUnsungTags = '\\1c$unsungOutlineColor\\3c$unsungOutlineColor\\1a&H00&\\3a&H00&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&HFF&\\3a&HFF&)';
                 String glowSungTags = '\\1c$sungOutlineColor\\3c$sungOutlineColor\\1a&HFF&\\3a&HFF&\\bord${glowBord.toStringAsFixed(1)}\\blur${layerOutW.toStringAsFixed(1)}\\t($tStart,$tEnd,\\1a&H00&\\3a&H00&)';
                 sb.writeln(
-                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowUnsungTags}${node.text}',
+                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an4\\pos(${leftX.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowUnsungTags}${node.text}',
                 );
                 sb.writeln(
-                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an5\\pos(${adjustedCx.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowSungTags}${node.text}',
+                  'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},DefaultUnsung,,0,0,0,,{\\an4\\pos(${leftX.toStringAsFixed(1)},${y.toStringAsFixed(1)})$glowSungTags}${node.text}',
                 );
               }
             }
@@ -997,8 +1006,8 @@ class AssExporter {
               sb: sb,
               rawText: node.text,
               style: 'DefaultUnsung',
-              alignmentTag: '\\an5',
-              posX: adjustedCx,
+              alignmentTag: '\\an4',
+              posX: leftX,
               posY: y,
               x: currentX,
               y: y,
@@ -1017,8 +1026,8 @@ class AssExporter {
               sb: sb,
               rawText: node.text,
               style: 'DefaultSung',
-              alignmentTag: '\\an5',
-              posX: adjustedCx,
+              alignmentTag: '\\an4',
+              posX: leftX,
               posY: y,
               x: currentX,
               y: y,

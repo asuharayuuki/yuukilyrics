@@ -617,16 +617,16 @@ class _MainScreenState extends State<MainScreen> {
         ),
         NavigationDrawerDestination(
           icon: Icon(Icons.timer),
-          label: Text('Timing'),
+          label: Text('タイミング'),
         ),
         NavigationDrawerDestination(
           icon: Icon(Icons.movie_creation),
-          label: Text('ASS Studio'),
+          label: Text('ASS 出力'),
         ),
         Divider(),
         NavigationDrawerDestination(
           icon: Icon(Icons.info_outline),
-          label: Text('About'),
+          label: Text('情報'),
         ),
       ],
     );

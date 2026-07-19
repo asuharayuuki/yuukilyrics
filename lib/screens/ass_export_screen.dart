@@ -537,7 +537,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              '発光の太さ (Glow Width): ${_outlineWidth.toInt()} px',
+              '文字飾りのサイズ: ${_outlineWidth.toInt()} px',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
             Slider(
@@ -592,16 +592,16 @@ class _AssExportScreenState extends State<AssExportScreen> {
                   child: Icon(Icons.close),
                 ),
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.withValues(alpha: 0.5)),
-                      borderRadius: BorderRadius.circular(4),
-                      color: Colors.grey.withValues(alpha: 0.1),
+                  child: TextField(
+                    controller: TextEditingController(
+                      text: '${(_resolutionHeight * 16 / 9).round()}',
                     ),
-                    child: Text(
-                      '幅 (Width): ${(_resolutionHeight * 16 / 9).round()} px',
-                      style: const TextStyle(fontSize: 16),
+                    readOnly: true,
+                    decoration: InputDecoration(
+                      labelText: '幅 (Width) px',
+                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Colors.grey.withValues(alpha: 0.1),
                     ),
                   ),
                 ),

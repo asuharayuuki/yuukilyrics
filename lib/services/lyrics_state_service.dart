@@ -1349,7 +1349,7 @@ class LyricsStateService extends ChangeNotifier {
           if (jobResults.containsKey(li) && jobResults[li]!.containsKey(ni)) {
             final rubyNodes = jobResults[li]![ni];
             if (rubyNodes != null && rubyNodes.isNotEmpty) {
-              newNodes.addAll(rubyNodes!);
+              newNodes.addAll(rubyNodes);
             } else {
               newNodes.add(node);
             }
