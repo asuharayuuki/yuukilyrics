@@ -1,0 +1,94 @@
+name: Build Windows x64
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.0'
+
+      - name: Show build environment
+        shell: pwsh
+        run: |
+          flutter --version
+          cmake --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows x64
+        shell: pwsh
+        run: |
+          flutter build windows --release 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Extract version info
+        id: version
+        shell: pwsh
+        run: |
+          $versionLine = Get-Content pubspec.yaml |
+            Where-Object { $_ -match '^version:\s*' } |
+            Select-Object -First 1
+
+          if (-not $versionLine) {
+            throw 'Version not found in pubspec.yaml'
+          }
+
+          $appVersion = ($versionLine -replace '^version:\s*', '').Trim()
+          $versionParts = $appVersion.Split('+', 2)
+          $version = $versionParts[0]
+          $build = if ($versionParts.Count -gt 1) { $versionParts[1] } else { '' }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "build=$build" >> $env:GITHUB_OUTPUT
+          "artifact_version=$appVersion" >> $env:GITHUB_OUTPUT
+          Write-Output "Version: $version, Build: $(if ($build) { $build } else { 'none' })"
+
+      - name: Prepare artifacts
+        shell: pwsh
+        run: |
+          $releaseDir = 'build/windows/x64/runner/Release'
+          if (-not (Test-Path -LiteralPath $releaseDir -PathType Container)) {
+            throw "Windows release directory not found at $releaseDir"
+          }
+
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $artifactVersion = '${{ steps.version.outputs.artifact_version }}'
+          $archivePath = "dist/yuukilyrics-$artifactVersion-windows-x64.zip"
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath $archivePath -Force
+
+          Write-Output 'Artifact prepared:'
+          Get-Item -LiteralPath $archivePath | Format-List Name, Length
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: yuukilyrics-windows-x64
+          path: dist/yuukilyrics-${{ steps.version.outputs.artifact_version }}-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-logs-windows
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7

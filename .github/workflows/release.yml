@@ -1,0 +1,119 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Match tag to application version
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          VERSION="${APP_VERSION%%+*}"
+          EXPECTED_TAG="v${VERSION}"
+
+          if [ "$GITHUB_REF_NAME" != "$EXPECTED_TAG" ]; then
+            echo "ERROR: Tag $GITHUB_REF_NAME does not match pubspec version $VERSION"
+            exit 1
+          fi
+
+  android:
+    name: Android arm64
+    needs: validate
+    uses: ./.github/workflows/build-android.yml
+    secrets: inherit
+
+  ios:
+    name: iOS arm64 unsigned
+    needs: validate
+    uses: ./.github/workflows/build-ios.yml
+
+  windows:
+    name: Windows x64
+    needs: validate
+    uses: ./.github/workflows/build-windows.yml
+
+  release:
+    name: Publish GitHub Release
+    needs:
+      - android
+      - ios
+      - windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout release history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: yuukilyrics-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify release artifacts
+        run: |
+          set -euo pipefail
+          mapfile -t ASSETS < <(find dist -maxdepth 1 -type f -print | sort)
+
+          if [ "${#ASSETS[@]}" -ne 3 ]; then
+            echo "ERROR: Expected 3 release assets, found ${#ASSETS[@]}"
+            printf '%s\n' "${ASSETS[@]}"
+            exit 1
+          fi
+
+          printf 'Release assets:\n%s\n' "${ASSETS[@]}"
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            COMMIT_RANGE="$PREVIOUS_TAG..$GITHUB_REF_NAME"
+            CHANGELOG_URL="https://github.com/$GITHUB_REPOSITORY/compare/$PREVIOUS_TAG...$GITHUB_REF_NAME"
+          else
+            COMMIT_RANGE="$GITHUB_REF_NAME"
+            CHANGELOG_URL="https://github.com/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME"
+          fi
+
+          {
+            echo "## What's Changed"
+            git log --no-merges --pretty=format:'- %s (`%h`)' "$COMMIT_RANGE"
+            echo
+            echo
+            echo "**Full Changelog**: $CHANGELOG_URL"
+          } > release-notes.md
+
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --notes-file release-notes.md \
+            --title "$GITHUB_REF_NAME"

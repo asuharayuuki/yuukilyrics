@@ -1,0 +1,299 @@
+{
+  "@@locale": "ja",
+  "appTitle": "yuukilyrics",
+  "cancel": "キャンセル",
+  "apply": "適用",
+  "close": "閉じる",
+  "delete": "削除",
+  "refresh": "更新",
+  "share": "共有",
+  "confirm": "決定",
+  "openNavigationMenu": "ナビゲーションメニューを開く",
+  "file": "ファイル",
+  "preview": "プレビュー",
+  "export": "出力",
+  "automatic": "自動",
+  "automaticPixels": "自動（{value} px）",
+  "@automaticPixels": {"placeholders": {"value": {}}},
+  "waveformAnalysisFailed": "波形の解析に失敗しました：{error}",
+  "@waveformAnalysisFailed": {"placeholders": {"error": {}}},
+  "exportFile": "ファイルを出力",
+  "fileName": "ファイル名",
+  "saveToDevice": "デバイスに保存",
+  "emptyLyricsCannotExport": "歌詞が空のため、出力できません。",
+  "timedLyricsShareSubject": "タイムタグ付き歌詞：{fileName}",
+  "@timedLyricsShareSubject": {"placeholders": {"fileName": {}}},
+  "chooseLyricsSaveLocation": "歌詞ファイルの保存先を選択",
+  "lyricsFileSaved": "歌詞ファイルを保存しました：{path}",
+  "@lyricsFileSaved": {"placeholders": {"path": {}}},
+  "lyricsExportFailed": "歌詞ファイルの出力に失敗しました：{error}",
+  "@lyricsExportFailed": {"placeholders": {"error": {}}},
+  "assShareSubject": "ASS 字幕：{fileName}",
+  "@assShareSubject": {"placeholders": {"fileName": {}}},
+  "chooseAssSaveLocation": "ASS 字幕の保存先を選択",
+  "assSaved": "ASS 字幕を保存しました：{path}",
+  "@assSaved": {"placeholders": {"path": {}}},
+  "assExportFailed": "ASS 字幕の出力に失敗しました：{error}",
+  "@assExportFailed": {"placeholders": {"error": {}}},
+  "chooseVideoSaveLocation": "動画の保存先を選択",
+  "outputPreparationFailed": "出力先を準備できませんでした：{error}",
+  "@outputPreparationFailed": {"placeholders": {"error": {}}},
+  "detectingEncoder": "エンコーダーを検出中…",
+  "encodingVideo": "動画をエンコード中…",
+  "burningSubtitles": "字幕を動画に焼き付けています。しばらくお待ちください。",
+  "encoderName": "エンコーダー：{codec}",
+  "@encoderName": {"placeholders": {"codec": {}}},
+  "videoSaved": "動画を保存しました：{path}",
+  "@videoSaved": {"placeholders": {"path": {}}},
+  "hardsubVideoShareSubject": "字幕付き動画：{fileName}",
+  "@hardsubVideoShareSubject": {"placeholders": {"fileName": {}}},
+  "encodingFailed": "エンコードに失敗しました",
+  "openMediaFile": "メディアファイルを開く",
+  "openMediaFileDescription": "タイムタグを付ける音声または動画を読み込みます",
+  "openLyricsFile": "歌詞ファイルを開く",
+  "openLyricsFileDescription": "LRC などの歌詞ファイルを読み込みます",
+  "exportTimedLyrics": "タイムタグ付き歌詞を出力",
+  "exportTimedLyricsDescription": "編集中の歌詞を LRC 形式で保存します",
+  "license": "ライセンス",
+  "timingEditor": "タイムタグ編集",
+  "assExport": "ASS 出力",
+  "assetLibrary": "素材ライブラリ",
+  "fontLibrary": "フォントライブラリ",
+  "aboutApp": "アプリ情報",
+  "versionAndBuild": "バージョン {version}（ビルド {buildNumber}）",
+  "@versionAndBuild": {
+    "placeholders": {
+      "version": {},
+      "buildNumber": {}
+    }
+  },
+  "toggleTextEditMode": "テキスト編集モードを切り替え",
+  "previewLoadFailed": "プレビューの読み込みに失敗しました：{error}",
+  "@previewLoadFailed": {"placeholders": {"error": {}}},
+  "subtitleRenderWarnings": "字幕描画の警告・エラー",
+  "playingAtDoubleSpeed": "2 倍速で再生中",
+  "warningErrorCount": "警告・エラー {count} 件",
+  "@warningErrorCount": {"placeholders": {"count": {}}},
+  "singerName": "歌手名",
+  "addSingerIcon": "歌手アイコンを追加",
+  "replaceExistingIcon": "既存のアイコンを置き換える",
+  "replaceSingerIconQuestion": "「{name}」には既にアイコンがあります。置き換えますか？",
+  "@replaceSingerIconQuestion": {"placeholders": {"name": {}}},
+  "replace": "置き換える",
+  "singerIconSaved": "歌手アイコンを保存しました",
+  "renameSinger": "歌手名を変更",
+  "singerRenamed": "歌手名を変更しました",
+  "deleteSingerIcon": "歌手アイコンを削除",
+  "deleteSingerIconQuestion": "「{name}」のアイコンを削除しますか？",
+  "@deleteSingerIconQuestion": {"placeholders": {"name": {}}},
+  "singerIconDeleted": "歌手アイコンを削除しました",
+  "operationFailed": "操作に失敗しました：{error}",
+  "@operationFailed": {"placeholders": {"error": {}}},
+  "addImage": "画像を追加",
+  "singerIconConflicts": "同名ファイルの競合が {count} 件あります。歌手ごとに画像を1ファイルだけ残し、素材フォルダーを整理してから更新してください。",
+  "@singerIconConflicts": {"placeholders": {"count": {}}},
+  "noSingerIcons": "歌手アイコンはまだ登録されていません",
+  "renameSingerTooltip": "歌手名を変更",
+  "openMediaPrompt": "メディアファイルを開いてください。",
+  "lyricsInputHint": "歌詞を入力してください",
+  "lyricsEmptyPrompt": "歌詞ファイルを開くか、テキスト編集モードで歌詞を入力してください。",
+  "playPause": "再生／一時停止",
+  "stopTagging": "タグ打ちを終了",
+  "startTagging": "タグ打ちを開始",
+  "addCheck": "チェックを追加",
+  "removeCheck": "チェックを削除",
+  "mergeNextCharacter": "次の文字と結合",
+  "splitCharacter": "文字を分割",
+  "toggleKeyUpCheck": "キーアップチェックを追加／削除",
+  "autoRubyAndChecks": "自動ルビ・チェック付加",
+  "seekBackOnePointFiveSeconds": "1.5 秒戻る",
+  "seekForwardOneSecond": "1 秒進む",
+  "taggingOffset": "タイムタグ入力オフセット",
+  "confirmBulkAdjustment": "一括調整を確定",
+  "bulkAdjustTimeTags": "タイムタグ一括調整",
+  "playbackSpeed": "再生速度",
+  "rubyLabel": "ルビ：",
+  "rubyInputHint": "ルビを入力（例：こう）",
+  "advanceInputTime": "入力時刻を {offset} ms早める",
+  "@advanceInputTime": {"placeholders": {"offset": {}}},
+  "delayInputTime": "入力時刻を {offset} ms遅らせる",
+  "@delayInputTime": {"placeholders": {"offset": {}}},
+  "offsetHelp": "操作時の反応遅延を補正します\n初期値：-230 ms",
+  "preparing": "準備中…",
+  "fetchingRubyProgress": "ルビを取得中…（{current}／{total}）",
+  "@fetchingRubyProgress": {"placeholders": {"current": {}, "total": {}}},
+  "updatingLyrics": "歌詞を更新中…",
+  "stop": "中止",
+  "autoRubyCancelled": "ルビ振りを中止しました。完了済みの内容は保持されます。",
+  "autoRubyCompleted": "自動ルビ・チェック付加が完了しました。",
+  "colors": "配色",
+  "defaultColors": "デフォルト配色",
+  "importAction": "インポート",
+  "addSinger": "歌手を追加",
+  "textSettings": "文字",
+  "bold": "太字",
+  "textStyle": "文字スタイル",
+  "textStyleSummary": "{fontSize} px · {letterSpacing} · 飾り {decorationWidth} px",
+  "@textStyleSummary": {"placeholders": {"fontSize": {}, "letterSpacing": {}, "decorationWidth": {}}},
+  "blur": "ブラー",
+  "screenSettings": "画面",
+  "horizontalMargin": "左右余白",
+  "interludeCountdown": "間奏カウントダウン",
+  "showLinePrefix": "行頭文字を表示",
+  "font": "フォント",
+  "resetBuiltInFont": "内蔵フォントに戻す",
+  "chooseFont": "フォントを選択",
+  "importFont": "フォントを追加",
+  "manageFonts": "フォントを管理",
+  "replaceExistingFont": "既存のフォントを置き換える",
+  "replaceFontQuestion": "「{name}」は既に登録されています。置き換えますか？",
+  "@replaceFontQuestion": {"placeholders": {"name": {}}},
+  "fontImported": "フォントを追加しました",
+  "deleteFont": "フォントを削除",
+  "deleteFontQuestion": "「{name}」をフォントライブラリから削除しますか？",
+  "@deleteFontQuestion": {"placeholders": {"name": {}}},
+  "fontDeleted": "フォントを削除しました",
+  "fontFaces": "フォントフェイス",
+  "invalidFontFiles": "読み込めないフォントファイルが {count} 件あります。ファイルを確認してから更新してください。",
+  "@invalidFontFiles": {"placeholders": {"count": {}}},
+  "noImportedFonts": "追加済みのフォントはありません",
+  "fontFileSummary": "{fileName} ・ {count} フェイス ・ {size}",
+  "@fontFileSummary": {"placeholders": {"fileName": {}, "count": {}, "size": {}}},
+  "fontWithFaceCount": "{fileName} ・ {count} フェイス",
+  "@fontWithFaceCount": {"placeholders": {"fileName": {}, "count": {}}},
+  "fontFace": "フェイス",
+  "builtInFont": "内蔵フォント",
+  "subtitleLayout": "字幕配置",
+  "alternatingTwoLines": "2 行交互表示（左上／右下）",
+  "paragraphsByBlankLine": "空行ごとに段落分け",
+  "outputResolution": "出力解像度",
+  "heightPixels": "高さ (px)",
+  "widthPixels": "幅 (px)",
+  "resetSourceResolution": "元動画の解像度に戻す",
+  "secondsValue": "{value} 秒",
+  "@secondsValue": {"placeholders": {"value": {}}},
+  "singerColorsTitle": "{singer}の配色",
+  "@singerColorsTitle": {"placeholders": {"singer": {}}},
+  "colorPreset": "配色プリセット",
+  "sample": "サンプル",
+  "sungColors": "歌唱済みの配色",
+  "unsungColors": "未歌唱の配色",
+  "textColor": "文字色",
+  "outlineColor": "縁取り色",
+  "decorationColor": "飾り色",
+  "chooseItem": "{item}を選択",
+  "@chooseItem": {"placeholders": {"item": {}}},
+  "chooseColor": "色を選択",
+  "previewFontPreparationFailed": "プレビュー用フォントの準備に失敗しました：{error}",
+  "@previewFontPreparationFailed": {"placeholders": {"error": {}}},
+  "exportAssSubtitle": "ASS 字幕を出力",
+  "exportAssSubtitleDescription": "ASS 字幕ファイル（.ass）を保存します",
+  "exportHardsubVideo": "字幕付き動画を出力",
+  "exportHardsubVideoDescription": "字幕を動画に焼き付けて保存します",
+  "exportHardsubVideoUnavailable": "動画を読み込んだ場合のみ利用できます",
+  "fontParseFailed": "フォントの解析に失敗しました：{error}",
+  "@fontParseFailed": {"placeholders": {"error": {}}},
+  "fontFaceLoadFailed": "フォントフェイスの読み込みに失敗しました：{error}",
+  "@fontFaceLoadFailed": {"placeholders": {"error": {}}},
+  "linePrefix": "行頭文字",
+  "editColors": "配色を編集",
+  "singerColorImport": "歌手配色インポート",
+  "singerColorImportCompleted": "インポート完了：更新 {updated} 件、追加 {added} 件、スキップ {skipped} 行",
+  "@singerColorImportCompleted": {"placeholders": {"updated": {}, "added": {}, "skipped": {}}},
+  "singerColorImportCompletedWithDuplicates": "インポート完了：更新 {updated} 件、追加 {added} 件、スキップ {skipped} 行、テキスト内の同名データ {duplicates} 行を後の内容で上書き",
+  "@singerColorImportCompletedWithDuplicates": {"placeholders": {"updated": {}, "added": {}, "skipped": {}, "duplicates": {}}},
+  "singerColorImportHelp": "1行に歌手名と6色を記述し、Tab（推奨）または | で区切ります。\n単色は #RRGGBB、グラデーションは #上側の色/#下側の色 で指定します。見出し行は省略できます。",
+  "singerColorExample": "歌手名\t歌唱済み文字色\t歌唱済み縁取り色\t歌唱済み飾り色\t未歌唱文字色\t未歌唱縁取り色\t未歌唱飾り色\nラケナリア\t#0572A4/#052951\t#FFFFFF\t#E1E196\t#DCF0FC\t#43464A\t#E19696",
+  "singerColorImportSplitError": "{line} 行目：Tab または | で7列に区切ってください",
+  "@singerColorImportSplitError": {"placeholders": {"line": {}}},
+  "singerColorImportColumnCountError": "{line} 行目：7列必要ですが、{count}列あります",
+  "@singerColorImportColumnCountError": {"placeholders": {"line": {}, "count": {}}},
+  "singerColorImportSingerRequired": "{line} 行目：歌手名を入力してください",
+  "@singerColorImportSingerRequired": {"placeholders": {"line": {}}},
+  "singerColorImportInvalidColor": "{line} 行目：{colorName}「{value}」の形式が正しくありません",
+  "@singerColorImportInvalidColor": {"placeholders": {"line": {}, "colorName": {}, "value": {}}},
+  "sungTextColor": "歌唱済み文字色",
+  "sungOutlineColor": "歌唱済み縁取り色",
+  "sungDecorationColor": "歌唱済み飾り色",
+  "unsungTextColor": "未歌唱文字色",
+  "unsungOutlineColor": "未歌唱縁取り色",
+  "unsungDecorationColor": "未歌唱飾り色",
+  "paste": "貼り付け",
+  "singerColorInputHint": "ここに配色テキストを貼り付けます",
+  "singerColorImportSummary": "有効 {valid} 行、歌手 {singers} 名、同名上書き {duplicates} 行、スキップ {skipped} 行",
+  "@singerColorImportSummary": {"placeholders": {"valid": {}, "singers": {}, "duplicates": {}, "skipped": {}}},
+  "singerColorInputEmpty": "配色テキストが入力されていません",
+  "importValidRows": "インポート",
+  "resetDefaults": "デフォルトに戻す",
+  "showSingerIcon": "歌手アイコンを表示",
+  "fontSize": "フォントサイズ",
+  "letterSpacing": "文字間隔",
+  "decorationWidth": "飾りの幅",
+  "textOutlineWidth": "文字の縁取り幅",
+  "furiganaSize": "振り仮名サイズ",
+  "furiganaOutlineWidth": "振り仮名の縁取り幅",
+  "furiganaTextGap": "振り仮名と本文の間隔",
+  "lineSpacing": "行間隔",
+  "subtitleBottomMargin": "字幕と画面下端の余白",
+  "singerIconSize": "歌手アイコンサイズ",
+  "lyricsIconGap": "歌詞とアイコンの間隔",
+  "solidColor": "単色",
+  "gradient": "グラデーション",
+  "gradientTop": "上（0%）",
+  "gradientBottom": "下（100%）",
+  "hexColorCode": "16 進カラーコード",
+  "preset": "プリセット"
+  ,"noPreset": "プリセットなし"
+  ,"blueColors": "青配色"
+  ,"standardColors": "標準配色"
+  ,"chorusColors": "コーラス配色"
+  ,"blueColors2": "青配色2"
+  ,"purple": "紫"
+  ,"bluePurple": "青紫混"
+  ,"kusou": "空爽"
+  ,"fontFacesNotFound": "フォントフェイスが見つかりません。"
+  ,"enableHapticFeedback": "振動フィードバックを有効にする"
+  ,"disableHapticFeedback": "振動フィードバックを無効にする"
+  ,"saveColorPreset": "現在の配色を保存"
+  ,"colorPresetName": "プリセット名"
+  ,"colorPresetSaved": "配色プリセット「{name}」を保存しました"
+  ,"@colorPresetSaved": {"placeholders": {"name": {}}}
+  ,"colorPresetNameRequired": "プリセット名を入力してください"
+  ,"colorPresetNameInvalid": "プリセット名に「|」や改行は使用できません"
+  ,"lineColoring": "行ごとの配色"
+  ,"closeLineColoring": "行ごとの配色を閉じる"
+  ,"noSavedColorPresets": "ASS 出力画面に読み込まれた配色がありません"
+  ,"applyLineColor": "選択位置の歌手マーカーを「{name}」に切り替え"
+  ,"@applyLineColor": {"placeholders": {"name": {}}}
+  ,"selectLyricLineFirst": "先に歌詞の文字を選択してください"
+  ,"lineColoringFailed": "選択文字の前に行頭文字を挿入できませんでした"
+  ,"escapePod": "エスケープポッド"
+  ,"escapePodDescription": "フォント、歌手アイコン、配色を、他のプラットフォームでも復元できる ZIP にまとめます。"
+  ,"exportEscapePod": "エスケープポッドを出力"
+  ,"exportEscapePodDescription": "現在のライブラリを ZIP ファイルに保存します"
+  ,"importEscapePod": "エスケープポッドを読み込む"
+  ,"importEscapePodDescription": "同名の項目を更新し、それ以外の項目を追加します"
+  ,"preparingEscapePod": "エスケープポッドを準備しています…"
+  ,"importingEscapePod": "エスケープポッドを読み込んでいます…"
+  ,"chooseEscapePodSaveLocation": "エスケープポッドの保存先を選択"
+  ,"chooseEscapePodFile": "エスケープポッドを選択"
+  ,"escapePodExported": "出力完了：フォント {fonts} 件、アイコン {avatars} 件、配色 {colors} 件"
+  ,"@escapePodExported": {"placeholders": {"fonts": {}, "avatars": {}, "colors": {}}}
+  ,"escapePodImported": "読み込み完了：フォント {fonts} 件、アイコン {avatars} 件、配色 {colors} 件、スキップ {skipped} 件"
+  ,"@escapePodImported": {"placeholders": {"fonts": {}, "avatars": {}, "colors": {}, "skipped": {}}}
+  ,"escapePodExportFailed": "エスケープポッドの出力に失敗しました：{error}"
+  ,"@escapePodExportFailed": {"placeholders": {"error": {}}}
+  ,"escapePodImportFailed": "エスケープポッドの読み込みに失敗しました：{error}"
+  ,"@escapePodImportFailed": {"placeholders": {"error": {}}}
+  ,"lineAlignmentSettings": "各行の配置"
+  ,"lineAlignmentSettingsDescription": "下寄せ 2～4 行の左右位置を設定します"
+  ,"lineAlignmentSettingsHelp": "行数ごとに、それぞれの行を左寄せ、中央寄せ、右寄せから選択できます。"
+  ,"bottomAlignedTwoLines": "下寄せ 2 行"
+  ,"bottomAlignedThreeLines": "下寄せ 3 行"
+  ,"bottomAlignedFourLines": "下寄せ 4 行"
+  ,"lineNumber": "{line} 行目"
+  ,"@lineNumber": {"placeholders": {"line": {}}}
+  ,"alignLeft": "左"
+  ,"alignCenter": "中央"
+  ,"alignRight": "右"
+}

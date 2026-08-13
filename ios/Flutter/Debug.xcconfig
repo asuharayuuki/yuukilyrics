@@ -1,0 +1,3 @@
+#include "Generated.xcconfig"
+FLUTTER_BUILD_NAME=0.1.0
+FLUTTER_BUILD_NUMBER=3

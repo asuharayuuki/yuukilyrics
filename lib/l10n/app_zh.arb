@@ -1,0 +1,259 @@
+{
+  "@@locale": "zh",
+  "appTitle": "yuukilyrics",
+  "cancel": "取消",
+  "apply": "应用",
+  "close": "关闭",
+  "delete": "删除",
+  "refresh": "刷新",
+  "share": "分享",
+  "confirm": "确定",
+  "openNavigationMenu": "打开导航菜单",
+  "file": "文件",
+  "preview": "预览",
+  "export": "导出",
+  "automatic": "自动",
+  "automaticPixels": "自动（{value} px）",
+  "waveformAnalysisFailed": "波形分析失败：{error}",
+  "exportFile": "导出文件",
+  "fileName": "文件名",
+  "saveToDevice": "保存到设备",
+  "emptyLyricsCannotExport": "歌词为空，无法导出。",
+  "timedLyricsShareSubject": "带时间标签的歌词：{fileName}",
+  "chooseLyricsSaveLocation": "选择歌词文件保存位置",
+  "lyricsFileSaved": "歌词文件已保存：{path}",
+  "lyricsExportFailed": "歌词文件导出失败：{error}",
+  "assShareSubject": "ASS 字幕：{fileName}",
+  "chooseAssSaveLocation": "选择 ASS 字幕保存位置",
+  "assSaved": "ASS 字幕已保存：{path}",
+  "assExportFailed": "ASS 字幕导出失败：{error}",
+  "chooseVideoSaveLocation": "选择视频保存位置",
+  "outputPreparationFailed": "无法准备输出位置：{error}",
+  "detectingEncoder": "正在检测编码器…",
+  "encodingVideo": "正在编码视频…",
+  "burningSubtitles": "正在将字幕烧录到视频中，请稍候。",
+  "encoderName": "编码器：{codec}",
+  "videoSaved": "视频已保存：{path}",
+  "hardsubVideoShareSubject": "带字幕视频：{fileName}",
+  "encodingFailed": "编码失败",
+  "openMediaFile": "打开媒体文件",
+  "openMediaFileDescription": "载入需要添加时间标签的音频或视频",
+  "openLyricsFile": "打开歌词文件",
+  "openLyricsFileDescription": "载入 LRC 等歌词文件",
+  "exportTimedLyrics": "导出带时间标签的歌词",
+  "exportTimedLyricsDescription": "将正在编辑的歌词保存为 LRC 格式",
+  "license": "许可证",
+  "timingEditor": "时间标签编辑",
+  "assExport": "ASS 导出",
+  "assetLibrary": "素材库",
+  "fontLibrary": "字体库",
+  "aboutApp": "关于应用",
+  "versionAndBuild": "版本 {version}（构建号 {buildNumber}）",
+  "@versionAndBuild": {
+    "placeholders": {
+      "version": {},
+      "buildNumber": {}
+    }
+  },
+  "toggleTextEditMode": "切换文本编辑模式",
+  "previewLoadFailed": "预览载入失败：{error}",
+  "subtitleRenderWarnings": "字幕渲染警告与错误",
+  "playingAtDoubleSpeed": "正在以 2 倍速播放",
+  "warningErrorCount": "警告与错误 {count} 条",
+  "singerName": "歌手名",
+  "addSingerIcon": "添加歌手图标",
+  "replaceExistingIcon": "替换现有图标",
+  "replaceSingerIconQuestion": "“{name}”已有图标。要替换吗？",
+  "replace": "替换",
+  "singerIconSaved": "歌手图标已保存",
+  "renameSinger": "修改歌手名",
+  "singerRenamed": "歌手名已修改",
+  "deleteSingerIcon": "删除歌手图标",
+  "deleteSingerIconQuestion": "要删除“{name}”的图标吗？",
+  "singerIconDeleted": "歌手图标已删除",
+  "operationFailed": "操作失败：{error}",
+  "addImage": "添加图片",
+  "singerIconConflicts": "存在 {count} 个同名文件冲突。请确保每位歌手只保留一个图片文件，整理素材文件夹后再刷新。",
+  "noSingerIcons": "尚未添加歌手图标",
+  "renameSingerTooltip": "修改歌手名",
+  "openMediaPrompt": "请打开媒体文件。",
+  "lyricsInputHint": "请输入歌词",
+  "lyricsEmptyPrompt": "请打开歌词文件，或在文本编辑模式中输入歌词。",
+  "playPause": "播放/暂停",
+  "stopTagging": "结束打标签",
+  "startTagging": "开始打标签",
+  "addCheck": "添加检查点",
+  "removeCheck": "删除检查点",
+  "mergeNextCharacter": "与下一个字符合并",
+  "splitCharacter": "拆分字符",
+  "toggleKeyUpCheck": "添加/删除抬键检查点",
+  "autoRubyAndChecks": "自动添加注音与检查点",
+  "seekBackOnePointFiveSeconds": "后退 1.5 秒",
+  "seekForwardOneSecond": "前进 1 秒",
+  "taggingOffset": "时间标签输入偏移",
+  "confirmBulkAdjustment": "确认批量调整",
+  "bulkAdjustTimeTags": "批量调整时间标签",
+  "playbackSpeed": "播放速度",
+  "rubyLabel": "注音：",
+  "rubyInputHint": "输入注音（例：こう）",
+  "advanceInputTime": "输入时间提前 {offset} ms",
+  "delayInputTime": "输入时间延后 {offset} ms",
+  "offsetHelp": "用于补偿操作响应延迟\n默认值：-230 ms",
+  "preparing": "准备中…",
+  "fetchingRubyProgress": "正在获取注音…（{current}/{total}）",
+  "updatingLyrics": "正在更新歌词…",
+  "stop": "停止",
+  "autoRubyCancelled": "已停止添加注音；已完成的内容将保留。",
+  "autoRubyCompleted": "已完成自动添加注音与检查点。",
+  "colors": "配色",
+  "defaultColors": "默认配色",
+  "importAction": "导入",
+  "addSinger": "添加歌手",
+  "textSettings": "文字",
+  "bold": "粗体",
+  "textStyle": "文字样式",
+  "textStyleSummary": "{fontSize} px · {letterSpacing} · 装饰 {decorationWidth} px",
+  "blur": "模糊",
+  "screenSettings": "画面",
+  "horizontalMargin": "左右余白",
+  "interludeCountdown": "间奏倒计时",
+  "showLinePrefix": "显示行首字符",
+  "font": "字体",
+  "resetBuiltInFont": "恢复内置字体",
+  "chooseFont": "选择字体",
+  "importFont": "添加字体",
+  "manageFonts": "管理字体",
+  "replaceExistingFont": "替换现有字体",
+  "replaceFontQuestion": "“{name}”已经导入。要替换吗？",
+  "fontImported": "字体已添加",
+  "deleteFont": "删除字体",
+  "deleteFontQuestion": "要从字体库中删除“{name}”吗？",
+  "fontDeleted": "字体已删除",
+  "fontFaces": "字体样式",
+  "invalidFontFiles": "存在 {count} 个无法读取的字体文件。请检查文件后刷新。",
+  "noImportedFonts": "尚未添加字体",
+  "fontFileSummary": "{fileName} · {count} 个字体样式 · {size}",
+  "fontWithFaceCount": "{fileName} · {count} 个字体样式",
+  "fontFace": "字体样式",
+  "builtInFont": "内置字体",
+  "subtitleLayout": "字幕布局",
+  "alternatingTwoLines": "两行交替显示（左上/右下）",
+  "paragraphsByBlankLine": "按空行分段",
+  "outputResolution": "输出分辨率",
+  "heightPixels": "高度 (px)",
+  "widthPixels": "宽度 (px)",
+  "resetSourceResolution": "恢复原视频分辨率",
+  "secondsValue": "{value} 秒",
+  "singerColorsTitle": "{singer}的配色",
+  "colorPreset": "配色预设",
+  "sample": "示例",
+  "sungColors": "已演唱部分配色",
+  "unsungColors": "未演唱部分配色",
+  "textColor": "文字颜色",
+  "outlineColor": "描边颜色",
+  "decorationColor": "装饰颜色",
+  "chooseItem": "选择{item}",
+  "chooseColor": "选择颜色",
+  "previewFontPreparationFailed": "准备预览字体失败：{error}",
+  "exportAssSubtitle": "导出 ASS 字幕",
+  "exportAssSubtitleDescription": "保存 ASS 字幕文件（.ass）",
+  "exportHardsubVideo": "导出带字幕视频",
+  "exportHardsubVideoDescription": "将字幕烧录到视频并保存",
+  "exportHardsubVideoUnavailable": "仅在载入视频后可用",
+  "fontParseFailed": "字体解析失败：{error}",
+  "fontFaceLoadFailed": "字体样式载入失败：{error}",
+  "linePrefix": "行首字符",
+  "editColors": "编辑配色",
+  "singerColorImport": "导入歌手配色",
+  "singerColorImportCompleted": "导入完成：更新 {updated} 项，新增 {added} 项，跳过 {skipped} 行",
+  "singerColorImportCompletedWithDuplicates": "导入完成：更新 {updated} 项，新增 {added} 项，跳过 {skipped} 行；文本内 {duplicates} 行同名数据已由后面的内容覆盖",
+  "singerColorImportHelp": "每行填写歌手名和 6 种颜色，并使用 Tab（推荐）或 | 分隔。\n纯色使用 #RRGGBB，渐变使用 #上方颜色/#下方颜色。标题行可以省略。",
+  "singerColorExample": "歌手名称\t已演唱文字颜色\t已演唱描边颜色\t已演唱装饰颜色\t未演唱文字颜色\t未演唱描边颜色\t未演唱装饰颜色\nラケナリア\t#0572A4/#052951\t#FFFFFF\t#E1E196\t#DCF0FC\t#43464A\t#E19696",
+  "singerColorImportSplitError": "第 {line} 行：请使用 Tab 或 | 分隔为 7 列",
+  "singerColorImportColumnCountError": "第 {line} 行：需要 7 列，实际为 {count} 列",
+  "singerColorImportSingerRequired": "第 {line} 行：请输入歌手名",
+  "singerColorImportInvalidColor": "第 {line} 行：{colorName}“{value}”格式不正确",
+  "sungTextColor": "已演唱文字颜色",
+  "sungOutlineColor": "已演唱描边颜色",
+  "sungDecorationColor": "已演唱装饰颜色",
+  "unsungTextColor": "未演唱文字颜色",
+  "unsungOutlineColor": "未演唱描边颜色",
+  "unsungDecorationColor": "未演唱装饰颜色",
+  "paste": "粘贴",
+  "singerColorInputHint": "在此粘贴配色文本",
+  "singerColorImportSummary": "有效 {valid} 行，歌手 {singers} 名，同名覆盖 {duplicates} 行，跳过 {skipped} 行",
+  "singerColorInputEmpty": "尚未输入配色文本",
+  "importValidRows": "导入",
+  "resetDefaults": "恢复默认值",
+  "showSingerIcon": "显示歌手图标",
+  "fontSize": "字体大小",
+  "letterSpacing": "字符间距",
+  "decorationWidth": "装饰宽度",
+  "textOutlineWidth": "文字描边宽度",
+  "furiganaSize": "注音大小",
+  "furiganaOutlineWidth": "注音描边宽度",
+  "furiganaTextGap": "注音与正文间距",
+  "lineSpacing": "行间距",
+  "subtitleBottomMargin": "字幕与画面底部间距",
+  "singerIconSize": "歌手图标大小",
+  "lyricsIconGap": "歌词与图标间距",
+  "solidColor": "纯色",
+  "gradient": "渐变",
+  "gradientTop": "上方（0%）",
+  "gradientBottom": "下方（100%）",
+  "hexColorCode": "十六进制颜色代码",
+  "preset": "预设"
+  ,"noPreset": "无预设"
+  ,"blueColors": "蓝色配色"
+  ,"standardColors": "标准配色"
+  ,"chorusColors": "合唱配色"
+  ,"blueColors2": "蓝色配色 2"
+  ,"purple": "紫色"
+  ,"bluePurple": "蓝紫混合"
+  ,"kusou": "空爽"
+  ,"fontFacesNotFound": "未找到字体样式。"
+  ,"enableHapticFeedback": "开启震动反馈"
+  ,"disableHapticFeedback": "关闭震动反馈"
+  ,"saveColorPreset": "保存当前配色"
+  ,"colorPresetName": "预设名称"
+  ,"colorPresetSaved": "已保存配色预设“{name}”"
+  ,"@colorPresetSaved": {"placeholders": {"name": {}}}
+  ,"colorPresetNameRequired": "请输入预设名称"
+  ,"colorPresetNameInvalid": "预设名称不能包含“|”或换行"
+  ,"lineColoring": "分色"
+  ,"closeLineColoring": "关闭分色"
+  ,"noSavedColorPresets": "ASS 导出界面中没有已加载的配色"
+  ,"applyLineColor": "将选中位置的歌手标记切换为“{name}”"
+  ,"@applyLineColor": {"placeholders": {"name": {}}}
+  ,"selectLyricLineFirst": "请先选择歌词字符"
+  ,"lineColoringFailed": "无法在选中字符前插入行首文字"
+  ,"escapePod": "逃生舱"
+  ,"escapePodDescription": "将字体、歌手头像和配色方案打包为可在其他平台恢复的 ZIP。"
+  ,"exportEscapePod": "导出逃生舱"
+  ,"exportEscapePodDescription": "将当前素材库保存为 ZIP 文件"
+  ,"importEscapePod": "导入逃生舱"
+  ,"importEscapePodDescription": "更新同名项目，并追加其他项目"
+  ,"preparingEscapePod": "正在准备逃生舱…"
+  ,"importingEscapePod": "正在导入逃生舱…"
+  ,"chooseEscapePodSaveLocation": "选择逃生舱保存位置"
+  ,"chooseEscapePodFile": "选择逃生舱文件"
+  ,"escapePodExported": "导出完成：字体 {fonts} 个，头像 {avatars} 个，配色 {colors} 个"
+  ,"@escapePodExported": {"placeholders": {"fonts": {}, "avatars": {}, "colors": {}}}
+  ,"escapePodImported": "导入完成：字体 {fonts} 个，头像 {avatars} 个，配色 {colors} 个，跳过 {skipped} 个"
+  ,"@escapePodImported": {"placeholders": {"fonts": {}, "avatars": {}, "colors": {}, "skipped": {}}}
+  ,"escapePodExportFailed": "导出逃生舱失败：{error}"
+  ,"@escapePodExportFailed": {"placeholders": {"error": {}}}
+  ,"escapePodImportFailed": "导入逃生舱失败：{error}"
+  ,"@escapePodImportFailed": {"placeholders": {"error": {}}}
+  ,"lineAlignmentSettings": "每行位置"
+  ,"lineAlignmentSettingsDescription": "设置下对齐 2～4 行中每一行的左右位置"
+  ,"lineAlignmentSettingsHelp": "可以分别为不同总行数中的每一行选择居左、居中或居右。"
+  ,"bottomAlignedTwoLines": "下对齐 2 行"
+  ,"bottomAlignedThreeLines": "下对齐 3 行"
+  ,"bottomAlignedFourLines": "下对齐 4 行"
+  ,"lineNumber": "第 {line} 行"
+  ,"@lineNumber": {"placeholders": {"line": {}}}
+  ,"alignLeft": "居左"
+  ,"alignCenter": "居中"
+  ,"alignRight": "居右"
+}
