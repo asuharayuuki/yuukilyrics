@@ -750,6 +750,57 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get savedColorPresets => '保存済み配色';
+
+  @override
+  String get noSavedColorPresetLibrary => '保存済みの配色はありません';
+
+  @override
+  String get addToCurrentSingerColors => '追加';
+
+  @override
+  String get moreActions => 'その他の操作';
+
+  @override
+  String get renameColorPreset => '配色名を変更';
+
+  @override
+  String get deleteColorPreset => '保存済み配色を削除';
+
+  @override
+  String deleteColorPresetQuestion(Object name) {
+    return '保存済み配色「$name」を削除しますか？現在の ASS 設定に追加済みの歌手配色は削除されません。';
+  }
+
+  @override
+  String colorPresetDeleted(Object name) {
+    return '配色「$name」を削除しました';
+  }
+
+  @override
+  String colorPresetRenamed(Object name) {
+    return '配色名を「$name」に変更しました';
+  }
+
+  @override
+  String get replaceCurrentSingerColorTitle => '現在の歌手配色を置換';
+
+  @override
+  String replaceCurrentSingerColorQuestion(Object name) {
+    return '現在の歌手配色に「$name」が既にあります。保存済みの配色で置き換えますか？';
+  }
+
+  @override
+  String colorPresetAddedToCurrent(Object name) {
+    return '「$name」を現在の歌手配色に追加しました';
+  }
+
+  @override
+  String currentSingerColorReplaced(Object name) {
+    return '現在の歌手配色「$name」を置き換えました';
+  }
+
+  @override
   String get colorPresetNameRequired => 'プリセット名を入力してください';
 
   @override

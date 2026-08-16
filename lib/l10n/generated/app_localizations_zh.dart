@@ -750,6 +750,57 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get savedColorPresets => '已保存配色';
+
+  @override
+  String get noSavedColorPresetLibrary => '尚未保存配色';
+
+  @override
+  String get addToCurrentSingerColors => '添加';
+
+  @override
+  String get moreActions => '更多操作';
+
+  @override
+  String get renameColorPreset => '重命名配色';
+
+  @override
+  String get deleteColorPreset => '删除已保存配色';
+
+  @override
+  String deleteColorPresetQuestion(Object name) {
+    return '确定删除已保存配色“$name”吗？当前 ASS 设置中已添加的歌手配色不会被删除。';
+  }
+
+  @override
+  String colorPresetDeleted(Object name) {
+    return '已删除配色“$name”';
+  }
+
+  @override
+  String colorPresetRenamed(Object name) {
+    return '已将配色重命名为“$name”';
+  }
+
+  @override
+  String get replaceCurrentSingerColorTitle => '替换当前歌手配色';
+
+  @override
+  String replaceCurrentSingerColorQuestion(Object name) {
+    return '当前歌手配色中已存在“$name”。是否用已保存的配色替换？';
+  }
+
+  @override
+  String colorPresetAddedToCurrent(Object name) {
+    return '已将“$name”添加到当前歌手配色';
+  }
+
+  @override
+  String currentSingerColorReplaced(Object name) {
+    return '已替换当前歌手配色“$name”';
+  }
+
+  @override
   String get colorPresetNameRequired => '请输入预设名称';
 
   @override

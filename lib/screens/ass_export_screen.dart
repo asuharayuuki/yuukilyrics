@@ -22,6 +22,7 @@ import 'dart:math';
 import '../l10n/l10n.dart';
 import '../widgets/font_face_preview_text.dart';
 import '../widgets/dual_color_preview.dart';
+import '../widgets/saved_color_presets_dialog.dart';
 
 class _FontLibraryChoice {
   final FontLibraryAsset? asset;
@@ -874,9 +875,9 @@ class _AssExportScreenState extends State<AssExportScreen> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _showSingerColorImportDialog,
-                icon: const Icon(Icons.upload_file),
-                label: Text(context.l10n.importAction),
+                onPressed: _showSavedColorPresetsDialog,
+                icon: const Icon(Icons.palette_outlined),
+                label: Text(context.l10n.savedColorPresets),
               ),
             ),
             const SizedBox(width: 8),
@@ -1347,6 +1348,142 @@ class _AssExportScreenState extends State<AssExportScreen> {
     _publishActiveColorPresets();
   }
 
+  Future<void> _showSavedColorPresetsDialog() async {
+    try {
+      await widget.colorPresetLibrary.load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.operationFailed(error))),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => SavedColorPresetsDialog(
+        library: widget.colorPresetLibrary,
+        onAdd: _addSavedColorPresetToCurrent,
+        onRename: _renameSavedColorPreset,
+        onDelete: _deleteSavedColorPreset,
+        onImport: _showSingerColorImportDialog,
+      ),
+    );
+  }
+
+  Future<void> _addSavedColorPresetToCurrent(ColorPresetAsset preset) async {
+    final key = preset.name.trim().toLowerCase();
+    final matchingIndexes = <int>[
+      for (var index = 0; index < _singerColors.length; index++)
+        if (_singerColors[index].prefix.trim().toLowerCase() == key) index,
+    ];
+    if (matchingIndexes.isNotEmpty) {
+      final replace =
+          await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: Text(context.l10n.replaceCurrentSingerColorTitle),
+              content: Text(
+                context.l10n.replaceCurrentSingerColorQuestion(preset.name),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: Text(context.l10n.cancel),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: Text(context.l10n.replace),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!replace || !mounted) return;
+    }
+
+    final singer = _singerFromColorPreset(preset);
+    setState(() {
+      if (matchingIndexes.isEmpty) {
+        _singerColors.add(singer);
+        _singerControllers.add(TextEditingController(text: singer.prefix));
+      } else {
+        for (final index in matchingIndexes) {
+          _singerColors[index] = singer.copy();
+          _singerControllers[index].text = singer.prefix;
+        }
+      }
+    });
+    _publishActiveColorPresets();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          matchingIndexes.isEmpty
+              ? context.l10n.colorPresetAddedToCurrent(preset.name)
+              : context.l10n.currentSingerColorReplaced(preset.name),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _renameSavedColorPreset(ColorPresetAsset preset) async {
+    final name = await _showColorPresetNameDialog(
+      title: context.l10n.renameColorPreset,
+      initialName: preset.name,
+    );
+    if (name == null || name == preset.name || !mounted) return;
+    try {
+      await widget.colorPresetLibrary.rename(preset, name);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.colorPresetRenamed(name))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.operationFailed(error))),
+      );
+    }
+  }
+
+  Future<void> _deleteSavedColorPreset(ColorPresetAsset preset) async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(context.l10n.deleteColorPreset),
+            content: Text(context.l10n.deleteColorPresetQuestion(preset.name)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(context.l10n.cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(context.l10n.delete),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    try {
+      await widget.colorPresetLibrary.delete(preset);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.colorPresetDeleted(preset.name))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.operationFailed(error))),
+      );
+    }
+  }
+
   Future<void> _showSingerColorImportDialog() async {
     final savedMarkdown = await widget.colorPresetLibrary.readMarkdown();
     if (!mounted) return;
@@ -1460,6 +1597,28 @@ class _AssExportScreenState extends State<AssExportScreen> {
         : ColorPresetValue.solid(value.color0.toARGB32());
   }
 
+  AssColorValue _fromPresetValue(ColorPresetValue value) {
+    return value.isGradient
+        ? AssColorValue.gradient(
+            color0: Color(value.color0),
+            color100: Color(value.color100),
+          )
+        : AssColorValue.solid(Color(value.color0));
+  }
+
+  SingerColorInfo _singerFromColorPreset(ColorPresetAsset preset) {
+    return SingerColorInfo(
+      prefix: preset.name,
+      preset: SingerColorPreset.none,
+      sungTextColor: _fromPresetValue(preset.sungTextColor),
+      sungOutlineColor: _fromPresetValue(preset.sungOutlineColor),
+      sungDecorationColor: _fromPresetValue(preset.sungDecorationColor),
+      unsungTextColor: _fromPresetValue(preset.unsungTextColor),
+      unsungOutlineColor: _fromPresetValue(preset.unsungOutlineColor),
+      unsungDecorationColor: _fromPresetValue(preset.unsungDecorationColor),
+    );
+  }
+
   ColorPresetAsset _colorPresetFromSinger(String name, SingerColorInfo singer) {
     return ColorPresetAsset(
       name: name,
@@ -1482,14 +1641,17 @@ class _AssExportScreenState extends State<AssExportScreen> {
     );
   }
 
-  Future<String?> _showColorPresetNameDialog({String initialName = ''}) {
+  Future<String?> _showColorPresetNameDialog({
+    String? title,
+    String initialName = '',
+  }) {
     final controller = TextEditingController(text: initialName);
     String? errorText;
     return showDialog<String>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(context.l10n.saveColorPreset),
+          title: Text(title ?? context.l10n.saveColorPreset),
           content: TextField(
             controller: controller,
             autofocus: true,

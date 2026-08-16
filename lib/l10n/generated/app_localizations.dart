@@ -1386,6 +1386,84 @@ abstract class AppLocalizations {
   /// **'配色プリセット「{name}」を保存しました'**
   String colorPresetSaved(Object name);
 
+  /// No description provided for @savedColorPresets.
+  ///
+  /// In ja, this message translates to:
+  /// **'保存済み配色'**
+  String get savedColorPresets;
+
+  /// No description provided for @noSavedColorPresetLibrary.
+  ///
+  /// In ja, this message translates to:
+  /// **'保存済みの配色はありません'**
+  String get noSavedColorPresetLibrary;
+
+  /// No description provided for @addToCurrentSingerColors.
+  ///
+  /// In ja, this message translates to:
+  /// **'追加'**
+  String get addToCurrentSingerColors;
+
+  /// No description provided for @moreActions.
+  ///
+  /// In ja, this message translates to:
+  /// **'その他の操作'**
+  String get moreActions;
+
+  /// No description provided for @renameColorPreset.
+  ///
+  /// In ja, this message translates to:
+  /// **'配色名を変更'**
+  String get renameColorPreset;
+
+  /// No description provided for @deleteColorPreset.
+  ///
+  /// In ja, this message translates to:
+  /// **'保存済み配色を削除'**
+  String get deleteColorPreset;
+
+  /// No description provided for @deleteColorPresetQuestion.
+  ///
+  /// In ja, this message translates to:
+  /// **'保存済み配色「{name}」を削除しますか？現在の ASS 設定に追加済みの歌手配色は削除されません。'**
+  String deleteColorPresetQuestion(Object name);
+
+  /// No description provided for @colorPresetDeleted.
+  ///
+  /// In ja, this message translates to:
+  /// **'配色「{name}」を削除しました'**
+  String colorPresetDeleted(Object name);
+
+  /// No description provided for @colorPresetRenamed.
+  ///
+  /// In ja, this message translates to:
+  /// **'配色名を「{name}」に変更しました'**
+  String colorPresetRenamed(Object name);
+
+  /// No description provided for @replaceCurrentSingerColorTitle.
+  ///
+  /// In ja, this message translates to:
+  /// **'現在の歌手配色を置換'**
+  String get replaceCurrentSingerColorTitle;
+
+  /// No description provided for @replaceCurrentSingerColorQuestion.
+  ///
+  /// In ja, this message translates to:
+  /// **'現在の歌手配色に「{name}」が既にあります。保存済みの配色で置き換えますか？'**
+  String replaceCurrentSingerColorQuestion(Object name);
+
+  /// No description provided for @colorPresetAddedToCurrent.
+  ///
+  /// In ja, this message translates to:
+  /// **'「{name}」を現在の歌手配色に追加しました'**
+  String colorPresetAddedToCurrent(Object name);
+
+  /// No description provided for @currentSingerColorReplaced.
+  ///
+  /// In ja, this message translates to:
+  /// **'現在の歌手配色「{name}」を置き換えました'**
+  String currentSingerColorReplaced(Object name);
+
   /// No description provided for @colorPresetNameRequired.
   ///
   /// In ja, this message translates to:

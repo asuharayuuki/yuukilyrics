@@ -218,6 +218,25 @@
   ,"colorPresetName": "预设名称"
   ,"colorPresetSaved": "已保存配色预设“{name}”"
   ,"@colorPresetSaved": {"placeholders": {"name": {}}}
+  ,"savedColorPresets": "已保存配色"
+  ,"noSavedColorPresetLibrary": "尚未保存配色"
+  ,"addToCurrentSingerColors": "添加"
+  ,"moreActions": "更多操作"
+  ,"renameColorPreset": "重命名配色"
+  ,"deleteColorPreset": "删除已保存配色"
+  ,"deleteColorPresetQuestion": "确定删除已保存配色“{name}”吗？当前 ASS 设置中已添加的歌手配色不会被删除。"
+  ,"@deleteColorPresetQuestion": {"placeholders": {"name": {}}}
+  ,"colorPresetDeleted": "已删除配色“{name}”"
+  ,"@colorPresetDeleted": {"placeholders": {"name": {}}}
+  ,"colorPresetRenamed": "已将配色重命名为“{name}”"
+  ,"@colorPresetRenamed": {"placeholders": {"name": {}}}
+  ,"replaceCurrentSingerColorTitle": "替换当前歌手配色"
+  ,"replaceCurrentSingerColorQuestion": "当前歌手配色中已存在“{name}”。是否用已保存的配色替换？"
+  ,"@replaceCurrentSingerColorQuestion": {"placeholders": {"name": {}}}
+  ,"colorPresetAddedToCurrent": "已将“{name}”添加到当前歌手配色"
+  ,"@colorPresetAddedToCurrent": {"placeholders": {"name": {}}}
+  ,"currentSingerColorReplaced": "已替换当前歌手配色“{name}”"
+  ,"@currentSingerColorReplaced": {"placeholders": {"name": {}}}
   ,"colorPresetNameRequired": "请输入预设名称"
   ,"colorPresetNameInvalid": "预设名称不能包含“|”或换行"
   ,"lineColoring": "分色"

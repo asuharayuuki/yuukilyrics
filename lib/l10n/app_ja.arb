@@ -258,6 +258,25 @@
   ,"colorPresetName": "プリセット名"
   ,"colorPresetSaved": "配色プリセット「{name}」を保存しました"
   ,"@colorPresetSaved": {"placeholders": {"name": {}}}
+  ,"savedColorPresets": "保存済み配色"
+  ,"noSavedColorPresetLibrary": "保存済みの配色はありません"
+  ,"addToCurrentSingerColors": "追加"
+  ,"moreActions": "その他の操作"
+  ,"renameColorPreset": "配色名を変更"
+  ,"deleteColorPreset": "保存済み配色を削除"
+  ,"deleteColorPresetQuestion": "保存済み配色「{name}」を削除しますか？現在の ASS 設定に追加済みの歌手配色は削除されません。"
+  ,"@deleteColorPresetQuestion": {"placeholders": {"name": {}}}
+  ,"colorPresetDeleted": "配色「{name}」を削除しました"
+  ,"@colorPresetDeleted": {"placeholders": {"name": {}}}
+  ,"colorPresetRenamed": "配色名を「{name}」に変更しました"
+  ,"@colorPresetRenamed": {"placeholders": {"name": {}}}
+  ,"replaceCurrentSingerColorTitle": "現在の歌手配色を置換"
+  ,"replaceCurrentSingerColorQuestion": "現在の歌手配色に「{name}」が既にあります。保存済みの配色で置き換えますか？"
+  ,"@replaceCurrentSingerColorQuestion": {"placeholders": {"name": {}}}
+  ,"colorPresetAddedToCurrent": "「{name}」を現在の歌手配色に追加しました"
+  ,"@colorPresetAddedToCurrent": {"placeholders": {"name": {}}}
+  ,"currentSingerColorReplaced": "現在の歌手配色「{name}」を置き換えました"
+  ,"@currentSingerColorReplaced": {"placeholders": {"name": {}}}
   ,"colorPresetNameRequired": "プリセット名を入力してください"
   ,"colorPresetNameInvalid": "プリセット名に「|」や改行は使用できません"
   ,"lineColoring": "行ごとの配色"

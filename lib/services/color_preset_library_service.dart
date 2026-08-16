@@ -73,6 +73,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
     if (!await file.exists()) {
       _presets.clear();
       await _write();
+      notifyListeners();
       return;
     }
 
@@ -104,6 +105,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
     _presets
       ..clear()
       ..addAll(parsed.values);
+    notifyListeners();
   }
 
   Future<String> readMarkdown() async {
@@ -136,6 +138,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
       _presets[index] = normalized;
     }
     await _write();
+    notifyListeners();
     return normalized;
   }
 
@@ -153,6 +156,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
       }
     }
     await _write();
+    notifyListeners();
   }
 
   Future<void> rename(ColorPresetAsset preset, String newName) async {
@@ -167,6 +171,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
     }
     _presets[currentIndex] = _presets[currentIndex].renamed(name);
     await _write();
+    notifyListeners();
   }
 
   Future<void> delete(ColorPresetAsset preset) async {
@@ -174,6 +179,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
       (item) => _nameKey(item.name) == _nameKey(preset.name),
     );
     await _write();
+    notifyListeners();
   }
 
   String? validateName(String source) {
