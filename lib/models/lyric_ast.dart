@@ -17,7 +17,10 @@ class LyricTimeTag extends LyricNode {
   static String formatDuration(Duration d) {
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final xx = (d.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(2, '0');
+    final xx = (d.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(
+      2,
+      '0',
+    );
     return '$mm:$ss:$xx';
   }
 
@@ -74,27 +77,55 @@ class LyricRuby extends LyricNode {
 
   final String baseText;
   final List<LyricNode> rubyNodes; // mutable list for in-place editing
+  final bool joinNext;
 
-  LyricRuby({required this.baseText, required this.rubyNodes});
+  LyricRuby({
+    required this.baseText,
+    required this.rubyNodes,
+    this.joinNext = false,
+  });
 
-  @override
-  String toLrcString() {
+  String rubyContentToLrcString() {
+    final contentNodes = rubyNodes
+        .where((node) => node is! LyricTimeTag || node.type != 10)
+        .toList();
+
     // If NO tags have timestamps, and the first tag has a type, output the clean version!
-    bool hasAnyTime = rubyNodes.whereType<LyricTimeTag>().any((t) => t.type != 10 && t.time.isNotEmpty);
+    bool hasAnyTime = contentNodes.whereType<LyricTimeTag>().any(
+      (t) => t.time.isNotEmpty,
+    );
     if (!hasAnyTime) {
-      final firstTag = rubyNodes.whereType<LyricTimeTag>().where((t) => t.type != 10).firstOrNull;
+      final firstTag = contentNodes.whereType<LyricTimeTag>().firstOrNull;
       if (firstTag != null && firstTag.type != null) {
-        String fullText = rubyNodes.whereType<LyricText>().map((e) => e.text).join('');
-        final tag10 = rubyNodes.where((n) => n is LyricTimeTag && n.type == 10).firstOrNull;
-        
-        String res = '{$baseText|[${firstTag.type}]$fullText}';
-        if (tag10 != null) res += tag10.toLrcString();
-        return res;
+        final fullText = contentNodes
+            .whereType<LyricText>()
+            .map((e) => e.text)
+            .join();
+        return '[${firstTag.type}]$fullText';
       }
     }
 
-    final rubyStr = rubyNodes.map((e) => e.toLrcString()).join('');
-    return '{$baseText|$rubyStr}';
+    return rubyNodes.map((e) => e.toLrcString()).join();
+  }
+
+  String endTagsToLrcString() {
+    final hasTimedRubyTag = rubyNodes.whereType<LyricTimeTag>().any(
+      (tag) => tag.type != 10 && tag.time.isNotEmpty,
+    );
+    final hasTypedRubyTag = rubyNodes.whereType<LyricTimeTag>().any(
+      (tag) => tag.type != 10 && tag.type != null,
+    );
+    if (hasTimedRubyTag || !hasTypedRubyTag) return '';
+    return rubyNodes
+        .whereType<LyricTimeTag>()
+        .where((tag) => tag.type == 10)
+        .map((tag) => tag.toLrcString())
+        .join();
+  }
+
+  @override
+  String toLrcString() {
+    return '{$baseText|${rubyContentToLrcString()}}${endTagsToLrcString()}';
   }
 }
 
@@ -107,7 +138,39 @@ class LyricLine {
   LyricLine({required this.nodes});
 
   String toLrcString() {
-    return nodes.map((e) => e.toLrcString()).join('');
+    final buffer = StringBuffer();
+    var index = 0;
+    while (index < nodes.length) {
+      final node = nodes[index];
+      if (node is! LyricRuby || !node.joinNext) {
+        buffer.write(node.toLrcString());
+        index++;
+        continue;
+      }
+
+      final chain = <LyricRuby>[node];
+      while (chain.last.joinNext && index + chain.length < nodes.length) {
+        final next = nodes[index + chain.length];
+        if (next is! LyricRuby) break;
+        chain.add(next);
+      }
+
+      if (chain.length == 1 || chain.last.joinNext) {
+        buffer.write(node.toLrcString());
+        index++;
+        continue;
+      }
+
+      buffer
+        ..write('{')
+        ..write(chain.map((ruby) => ruby.baseText).join())
+        ..write('|')
+        ..write(chain.map((ruby) => ruby.rubyContentToLrcString()).join('＋'))
+        ..write('}')
+        ..write(chain.map((ruby) => ruby.endTagsToLrcString()).join());
+      index += chain.length;
+    }
+    return buffer.toString();
   }
 }
 

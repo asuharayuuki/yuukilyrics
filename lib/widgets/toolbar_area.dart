@@ -461,7 +461,12 @@ class _ToolbarAreaState extends State<ToolbarArea> {
           sel.length > 2 &&
           sel[2] >= 0 &&
           sel[2] < node.text.length) {
-        label = '${node.text[sel[2]]}：';
+        final selectedLength = sel.length > 4 ? sel[4] : 1;
+        final candidateEnd = sel[2] + (selectedLength < 1 ? 1 : selectedLength);
+        final selectedEnd = candidateEnd > node.text.length
+            ? node.text.length
+            : candidateEnd;
+        label = '${node.text.substring(sel[2], selectedEnd)}：';
       }
     }
 

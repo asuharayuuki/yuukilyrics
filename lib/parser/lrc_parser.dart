@@ -1,4 +1,5 @@
 import '../models/lyric_ast.dart';
+import 'package:characters/characters.dart';
 
 class LrcParser {
   /// Parses a single line of extended LRC string into a LyricLine.
@@ -17,17 +18,17 @@ class LrcParser {
       } else if (line[cursor] == '{') {
         final rubyResult = _parseRuby(line, cursor);
         if (rubyResult != null) {
-          nodes.add(rubyResult.node);
+          nodes.addAll(rubyResult.node);
           cursor = rubyResult.endIndex;
           continue;
         }
       }
-      
+
       // If not a tag or ruby, or parsing failed, it's text.
       // Find the next '[' or '{' strictly after the current cursor
       int nextBracket = line.indexOf('[', cursor + 1);
       int nextBrace = line.indexOf('{', cursor + 1);
-      
+
       int nextSpec = -1;
       if (nextBracket != -1 && nextBrace != -1) {
         nextSpec = nextBracket < nextBrace ? nextBracket : nextBrace;
@@ -59,7 +60,7 @@ class LrcParser {
 
     String content = line.substring(start + 1, end);
     int pipeIndex = content.indexOf('|');
-    
+
     if (pipeIndex != -1) {
       int? type = int.tryParse(content.substring(0, pipeIndex));
       String time = content.substring(pipeIndex + 1);
@@ -73,136 +74,80 @@ class LrcParser {
     }
   }
 
-  static _ParseResult<LyricRuby>? _parseRuby(String line, int start) {
+  static _ParseResult<List<LyricNode>>? _parseRuby(String line, int start) {
     int end = line.indexOf('}', start);
     if (end == -1) return null;
 
     String content = line.substring(start + 1, end);
     int pipeIndex = content.indexOf('|');
-    
+
     if (pipeIndex != -1) {
       String baseText = content.substring(0, pipeIndex);
       String rubyContent = content.substring(pipeIndex + 1);
-      
-      // Parse rubyContent recursively into nodes
-      LyricLine rubyLine = parseLine(rubyContent);
-      
-      // Auto-fix missing type for RhythmicaLyrics syntax
-      List<List<LyricNode>> segments = [];
-      List<LyricNode> currentSegment = [];
 
-      for (final n in rubyLine.nodes) {
-        if (n is LyricText && n.text.contains('＋')) {
-          List<String> parts = n.text.split('＋');
-          for (int i = 0; i < parts.length; i++) {
-            if (parts[i].isNotEmpty) {
-              currentSegment.add(LyricText(parts[i]));
-            }
-            if (i < parts.length - 1) {
-              segments.add(currentSegment);
-              currentSegment = [];
-              currentSegment.add(LyricText('＋'));
-            }
-          }
-        } else {
-          currentSegment.add(n);
+      final rubyLine = parseLine(rubyContent);
+      final segments = <List<LyricNode>>[<LyricNode>[]];
+      var hasJoinMarker = false;
+      for (final node in rubyLine.nodes) {
+        if (node is! LyricText || !node.text.contains('＋')) {
+          segments.last.add(node);
+          continue;
         }
-      }
-      if (currentSegment.isNotEmpty) {
-        segments.add(currentSegment);
-      }
 
-      for (final seg in segments) {
-        int tagCount = 0;
-        LyricTimeTag? firstTag;
-        for (final n in seg) {
-          if (n is LyricTimeTag && n.type != 10) {
-            tagCount++;
-            firstTag ??= n;
+        final parts = node.text.split('＋');
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].isNotEmpty) {
+            segments.last.add(LyricText(parts[i]));
           }
-        }
-        if (firstTag != null && firstTag.type == null && tagCount > 0) {
-          firstTag.type = tagCount;
+          if (i < parts.length - 1) {
+            hasJoinMarker = true;
+            segments.add(<LyricNode>[]);
+          }
         }
       }
 
-      List<LyricNode> fixedNodes = [];
-      for (final seg in segments) {
-        fixedNodes.addAll(seg);
+      final baseUnits = baseText.characters.toList();
+      final canSplitJoinedBase =
+          baseUnits.isNotEmpty && baseUnits.every(_isWideRubyBaseUnit);
+      if (hasJoinMarker &&
+          canSplitJoinedBase &&
+          segments.length == baseUnits.length) {
+        return _ParseResult([
+          for (var i = 0; i < baseUnits.length; i++)
+            LyricRuby(
+              baseText: baseUnits[i],
+              rubyNodes: _fixRubySegment(segments[i]),
+              joinNext: i < baseUnits.length - 1,
+            ),
+        ], end + 1);
       }
-      rubyLine.nodes.clear();
-      rubyLine.nodes.addAll(fixedNodes);
-      
-      // Expand missing tags based on type indicators
-      List<LyricNode> expandedNodes = [];
-      List<LyricNode> currentSection = [];
-      List<List<LyricNode>> sections = [];
-      
-      for (final n in rubyLine.nodes) {
-        if (n is LyricTimeTag && n.type != null) {
-          if (currentSection.isNotEmpty) {
-            sections.add(currentSection);
-          }
-          currentSection = [n];
-        } else {
-          currentSection.add(n);
-        }
-      }
-      if (currentSection.isNotEmpty) {
-        sections.add(currentSection);
-      }
-      
-      for (final sec in sections) {
-        if (sec.isEmpty) continue;
-        final first = sec.first;
-        if (first is LyricTimeTag && first.type != null && first.type != 10) {
-           int expected = first.type!;
-           if (expected < 0) expected = 0;
-           if (expected > 100) expected = 100;
-           int existing = sec.whereType<LyricTimeTag>().length;
-           if (existing < expected) {
-              String fullText = '';
-              for (final n in sec) {
-                if (n is LyricText) fullText += n.text;
-              }
-              final chars = fullText.split('');
-              
-              final tagsQueue = <LyricTimeTag>[];
-              for (final n in sec) {
-                if (n is LyricTimeTag) tagsQueue.add(n);
-              }
-              while (tagsQueue.length < expected) {
-                tagsQueue.add(LyricTimeTag(type: null, time: ''));
-              }
-              
-              List<LyricNode> newSec = [];
-              newSec.add(tagsQueue.removeAt(0)); // The typed tag
-              
-              for (int i=0; i<chars.length; i++) {
-                newSec.add(LyricText(chars[i]));
-                if (tagsQueue.isNotEmpty && i < chars.length - 1) {
-                  newSec.add(tagsQueue.removeAt(0));
-                }
-              }
-              while (tagsQueue.isNotEmpty) {
-                newSec.add(tagsQueue.removeAt(0));
-              }
-              expandedNodes.addAll(newSec);
-           } else {
-              expandedNodes.addAll(sec);
-           }
-        } else {
-           expandedNodes.addAll(sec);
-        }
-      }
-      
-      return _ParseResult(
-        LyricRuby(baseText: baseText, rubyNodes: expandedNodes),
-        end + 1,
-      );
+
+      return _ParseResult([
+        LyricRuby(
+          baseText: baseText,
+          rubyNodes: _fixRubySegment(rubyLine.nodes),
+        ),
+      ], end + 1);
     }
-    
+
     return null;
+  }
+
+  static bool _isWideRubyBaseUnit(String unit) {
+    if (unit.isEmpty) return false;
+    final code = unit.runes.first;
+    return (code >= 0x3000 && code <= 0x9FFF) ||
+        (code >= 0xF900 && code <= 0xFAFF) ||
+        (code >= 0xFF00 && code <= 0xFFEF) ||
+        (code >= 0x1F000 && code <= 0x1FAFF) ||
+        (code >= 0x20000 && code <= 0x3FFFF) ||
+        code == 0x25CF;
+  }
+
+  static List<LyricNode> _fixRubySegment(List<LyricNode> nodes) {
+    // In RhythmicaLyrics the first tag's type stores t_kazu directly. Untyped
+    // tags are real time-only tags (t_kazu == 0), not omitted check counts.
+    return List<LyricNode>.from(nodes);
   }
 
   /// Parses a full multiline extended LRC document.
@@ -217,7 +162,7 @@ class LrcParser {
   }
 }
 
-class _ParseResult<T extends LyricNode> {
+class _ParseResult<T> {
   final T node;
   final int endIndex;
   _ParseResult(this.node, this.endIndex);

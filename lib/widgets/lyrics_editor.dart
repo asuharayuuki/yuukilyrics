@@ -19,10 +19,12 @@ class CharCell {
   final String? ruby; // the combined ruby text
   final int lineIndex;
   final int nodeIndex; // index in line.nodes
+  final int nodeEndIndex; // final node represented by this visual block
   final int?
   tagNodeIndex; // index of preceding standalone time tag node, if any
   final int charOffset; // offset within text node
   final List<Duration?> startTimes; // one start time for each cursor dot
+  final List<TaggingSlot> slotTargets;
   final Duration? karaokeStartTime; // for karaoke wipe start
   final bool hasEndTag; // show Tag-10 marker
   final bool isEndTagUntagged; // is the Tag-10 missing a timestamp?
@@ -34,15 +36,17 @@ class CharCell {
     this.ruby,
     required this.lineIndex,
     required this.nodeIndex,
+    int? nodeEndIndex,
     this.tagNodeIndex,
     this.charOffset = 0,
     required this.startTimes,
+    this.slotTargets = const [],
     this.karaokeStartTime,
     this.hasEndTag = false,
     this.isEndTagUntagged = false,
     this.endTime,
     this.colorMarker,
-  });
+  }) : nodeEndIndex = nodeEndIndex ?? nodeIndex;
 }
 
 class _ColoredTextSegment {
@@ -410,7 +414,8 @@ class _LyricsEditorState extends State<LyricsEditor> {
 
   bool _isCellForCursor(CharCell cell, TaggingSlot cursor) {
     return cursor.lineIndex == cell.lineIndex &&
-        (cursor.nodeIndex == cell.nodeIndex ||
+        (cell.slotTargets.contains(cursor) ||
+            cursor.nodeIndex == cell.nodeIndex ||
             cursor.nodeIndex == cell.tagNodeIndex);
   }
 
@@ -886,6 +891,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
     // We need to track the "current time" for karaoke by looking at time tags.
     Duration? currentTime;
     int? pendingTagNodeIndex;
+    int pendingCheckCount = 0;
 
     for (int ni = 0; ni < nodes.length; ni++) {
       final node = nodes[ni];
@@ -900,9 +906,11 @@ class _LyricsEditorState extends State<LyricsEditor> {
               ruby: cells[lastIdx].ruby,
               lineIndex: cells[lastIdx].lineIndex,
               nodeIndex: cells[lastIdx].nodeIndex,
+              nodeEndIndex: cells[lastIdx].nodeEndIndex,
               tagNodeIndex: cells[lastIdx].tagNodeIndex,
               charOffset: cells[lastIdx].charOffset,
               startTimes: cells[lastIdx].startTimes,
+              slotTargets: cells[lastIdx].slotTargets,
               karaokeStartTime: cells[lastIdx].karaokeStartTime,
               hasEndTag: true,
               isEndTagUntagged: node.time.isEmpty,
@@ -913,6 +921,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
         } else {
           currentTime = _parseTime(node.time);
           pendingTagNodeIndex = ni;
+          pendingCheckCount = node.type?.clamp(0, 7) ?? 0;
         }
       } else if (node is LyricText) {
         var consumedTimedText = false;
@@ -943,7 +952,23 @@ class _LyricsEditorState extends State<LyricsEditor> {
                 nodeIndex: ni,
                 tagNodeIndex: isFirstTimedText ? pendingTagNodeIndex : null,
                 charOffset: tokenOffset,
-                startTimes: isFirstTimedText ? [currentTime] : const [],
+                startTimes: isFirstTimedText
+                    ? List<Duration?>.generate(
+                        pendingCheckCount,
+                        (index) => index == 0 ? currentTime : null,
+                      )
+                    : const [],
+                slotTargets: isFirstTimedText
+                    ? List<TaggingSlot>.generate(
+                        pendingCheckCount,
+                        (slotIndex) => TaggingSlot(
+                          lineIndex: lineIndex,
+                          nodeIndex: pendingTagNodeIndex!,
+                          slotIndex: slotIndex,
+                          isRuby: false,
+                        ),
+                      )
+                    : const [],
                 karaokeStartTime: isFirstTimedText ? currentTime : null,
               ),
             );
@@ -953,46 +978,83 @@ class _LyricsEditorState extends State<LyricsEditor> {
         }
         if (consumedTimedText) {
           pendingTagNodeIndex = null;
+          pendingCheckCount = 0;
           currentTime = null;
         }
       } else if (node is LyricRuby) {
-        final internalTags = <LyricTimeTag>[];
+        final internalStartTimes = <Duration?>[];
         final internalTexts = <String>[];
+        final slotTargets = <TaggingSlot>[];
+        Duration? rubyStartTime;
         Duration? rubyEndTime;
         bool hasEndTag = false;
         bool isEndTagUntagged = false;
 
-        for (final rn in node.rubyNodes) {
-          if (rn is LyricTimeTag) {
-            if (rn.type == 10) {
-              rubyEndTime = _parseTime(rn.time);
-              hasEndTag = true;
-              isEndTagUntagged = rn.time.isEmpty;
-            } else {
-              internalTags.add(rn);
+        final chain = <({int nodeIndex, LyricRuby ruby})>[
+          (nodeIndex: ni, ruby: node),
+        ];
+        while (chain.last.ruby.joinNext &&
+            chain.last.nodeIndex + 1 < nodes.length) {
+          final nextIndex = chain.last.nodeIndex + 1;
+          final next = nodes[nextIndex];
+          if (next is! LyricRuby) break;
+          chain.add((nodeIndex: nextIndex, ruby: next));
+        }
+
+        for (final unit in chain) {
+          final unitTags = unit.ruby.rubyNodes
+              .whereType<LyricTimeTag>()
+              .where((tag) => tag.type != 10)
+              .toList();
+          final head = unitTags.firstOrNull;
+          rubyStartTime ??= head == null ? null : _parseTime(head.time);
+          final checkCount = head?.type == null ? 0 : head!.type!.clamp(0, 7);
+          for (var slotIndex = 0; slotIndex < checkCount; slotIndex++) {
+            internalStartTimes.add(
+              slotIndex < unitTags.length
+                  ? _parseTime(unitTags[slotIndex].time)
+                  : null,
+            );
+            slotTargets.add(
+              TaggingSlot(
+                lineIndex: lineIndex,
+                nodeIndex: unit.nodeIndex,
+                slotIndex: slotIndex,
+                isRuby: true,
+              ),
+            );
+          }
+
+          for (final rn in unit.ruby.rubyNodes) {
+            if (rn is LyricTimeTag) {
+              if (rn.type == 10) {
+                rubyEndTime = _parseTime(rn.time);
+                hasEndTag = true;
+                isEndTagUntagged = rn.time.isEmpty;
+              }
+            } else if (rn is LyricText) {
+              internalTexts.add(rn.text.replaceAll('＋', ''));
             }
-          } else if (rn is LyricText) {
-            // Collect ruby text, omitting segment dividers
-            internalTexts.add(rn.text.replaceAll('＋', ''));
           }
         }
 
         cells.add(
           CharCell(
-            text: node.baseText,
+            text: chain.map((unit) => unit.ruby.baseText).join(),
             ruby: internalTexts.join(),
             lineIndex: lineIndex,
             nodeIndex: ni,
+            nodeEndIndex: chain.last.nodeIndex,
             charOffset: 0,
-            startTimes: internalTags.map((t) => _parseTime(t.time)).toList(),
-            karaokeStartTime: internalTags.isNotEmpty
-                ? _parseTime(internalTags.first.time)
-                : null,
+            startTimes: internalStartTimes,
+            slotTargets: slotTargets,
+            karaokeStartTime: rubyStartTime,
             hasEndTag: hasEndTag,
             isEndTagUntagged: isEndTagUntagged,
             endTime: rubyEndTime,
           ),
         );
+        ni = chain.last.nodeIndex;
       }
     }
 
@@ -1020,9 +1082,11 @@ class _LyricsEditorState extends State<LyricsEditor> {
             ruby: cells[i].ruby,
             lineIndex: cells[i].lineIndex,
             nodeIndex: cells[i].nodeIndex,
+            nodeEndIndex: cells[i].nodeEndIndex,
             tagNodeIndex: cells[i].tagNodeIndex,
             charOffset: cells[i].charOffset,
             startTimes: cells[i].startTimes,
+            slotTargets: cells[i].slotTargets,
             karaokeStartTime: cells[i].karaokeStartTime,
             hasEndTag: cells[i].hasEndTag,
             isEndTagUntagged: cells[i].isEndTagUntagged,
@@ -1082,9 +1146,11 @@ class _LyricsEditorState extends State<LyricsEditor> {
               ruby: cells[j].ruby,
               lineIndex: cells[j].lineIndex,
               nodeIndex: cells[j].nodeIndex,
+              nodeEndIndex: cells[j].nodeEndIndex,
               tagNodeIndex: cells[j].tagNodeIndex,
               charOffset: cells[j].charOffset,
               startTimes: cells[j].startTimes,
+              slotTargets: cells[j].slotTargets,
               karaokeStartTime: cStart,
               hasEndTag: cells[j].hasEndTag,
               isEndTagUntagged: cells[j].isEndTagUntagged,
@@ -1174,7 +1240,8 @@ class _LyricsEditorState extends State<LyricsEditor> {
     if (ac != null) {
       isActiveCursorNode =
           ac.lineIndex == cell.lineIndex &&
-          (ac.nodeIndex == cell.nodeIndex ||
+          (cell.slotTargets.contains(ac) ||
+              ac.nodeIndex == cell.nodeIndex ||
               (cell.tagNodeIndex != null && ac.nodeIndex == cell.tagNodeIndex));
     }
 
@@ -1196,6 +1263,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
           cell.nodeIndex,
           cell.charOffset,
           cell.tagNodeIndex,
+          cell.text.length,
         );
       },
       child: GestureDetector(
@@ -1275,8 +1343,12 @@ class _LyricsEditorState extends State<LyricsEditor> {
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
                       ...List.generate(cell.startTimes.length, (slotIdx) {
-                        final isThisSlotActive =
-                            isActiveCursorNode && ac?.slotIndex == slotIdx;
+                        final slotTarget = slotIdx < cell.slotTargets.length
+                            ? cell.slotTargets[slotIdx]
+                            : null;
+                        final isThisSlotActive = slotTarget != null
+                            ? slotTarget == ac
+                            : isActiveCursorNode && ac?.slotIndex == slotIdx;
                         final isUntagged = cell.startTimes[slotIdx] == null;
 
                         Color baseColor;
@@ -1293,12 +1365,13 @@ class _LyricsEditorState extends State<LyricsEditor> {
                         }
 
                         return Listener(
-                          onPointerDown: (_) =>
-                              widget.lyricsState.setActiveCursorByTap(
-                                cell.lineIndex,
-                                cell.nodeIndex,
-                                slotIdx,
-                              ),
+                          onPointerDown: (_) {
+                            widget.lyricsState.setActiveCursorByTap(
+                              cell.lineIndex,
+                              slotTarget?.nodeIndex ?? cell.nodeIndex,
+                              slotTarget?.slotIndex ?? slotIdx,
+                            );
+                          },
                           child: Container(
                             margin: const EdgeInsets.only(right: 2),
                             width: 8,

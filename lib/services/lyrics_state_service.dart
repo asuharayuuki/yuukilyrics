@@ -190,8 +190,15 @@ class LyricsStateService extends ChangeNotifier {
     int nodeIndex, [
     int charOffset = 0,
     int? tagNodeIndex,
+    int selectedTextLength = 1,
   ]) {
-    _selectionPath = [lineIndex, nodeIndex, charOffset, tagNodeIndex ?? -1];
+    _selectionPath = [
+      lineIndex,
+      nodeIndex,
+      charOffset,
+      tagNodeIndex ?? -1,
+      selectedTextLength,
+    ];
 
     // Also jump the active cursor to the first slot of this node
     if (_activeCursor != null) {
@@ -438,28 +445,33 @@ class LyricsStateService extends ChangeNotifier {
       for (int ni = 0; ni < line.nodes.length; ni++) {
         final node = line.nodes[ni];
         if (node is LyricRuby) {
-          int slotIdx = 0;
-          for (final rn in node.rubyNodes) {
-            if (rn is LyricTimeTag && rn.type != 10) {
-              _allSlots.add(
-                TaggingSlot(
-                  lineIndex: li,
-                  nodeIndex: ni,
-                  slotIndex: slotIdx++,
-                  isRuby: true,
-                ),
-              );
-            }
+          final head = node.rubyNodes
+              .whereType<LyricTimeTag>()
+              .where((tag) => tag.type != 10)
+              .firstOrNull;
+          final count = head == null ? 0 : _standaloneCheckCount(head);
+          for (var slotIdx = 0; slotIdx < count; slotIdx++) {
+            _allSlots.add(
+              TaggingSlot(
+                lineIndex: li,
+                nodeIndex: ni,
+                slotIndex: slotIdx,
+                isRuby: true,
+              ),
+            );
           }
         } else if (node is LyricTimeTag && node.type != 10) {
-          _allSlots.add(
-            TaggingSlot(
-              lineIndex: li,
-              nodeIndex: ni,
-              slotIndex: 0,
-              isRuby: false,
-            ),
-          );
+          final count = _standaloneCheckCount(node);
+          for (var slotIdx = 0; slotIdx < count; slotIdx++) {
+            _allSlots.add(
+              TaggingSlot(
+                lineIndex: li,
+                nodeIndex: ni,
+                slotIndex: slotIdx,
+                isRuby: false,
+              ),
+            );
+          }
         }
       }
     }
@@ -526,21 +538,59 @@ class LyricsStateService extends ChangeNotifier {
 
     if (slot.isRuby) {
       final ruby = line.nodes[slot.nodeIndex] as LyricRuby;
-      int tagCount = 0;
-      for (final rn in ruby.rubyNodes) {
-        if (rn is LyricTimeTag && rn.type != 10) {
-          if (tagCount == slot.slotIndex) {
-            rn.time = timeStr;
-            break;
-          }
-          tagCount++;
-        }
+      final tags = ruby.rubyNodes
+          .whereType<LyricTimeTag>()
+          .where((tag) => tag.type != 10)
+          .toList();
+      while (tags.length <= slot.slotIndex) {
+        tags.add(LyricTimeTag(type: null, time: ''));
       }
-    } else {
+      tags[slot.slotIndex].time = timeStr;
+
+      final rubyText = ruby.rubyNodes
+          .whereType<LyricText>()
+          .map((text) => text.text)
+          .join();
+      final tag10List = ruby.rubyNodes
+          .whereType<LyricTimeTag>()
+          .where((tag) => tag.type == 10)
+          .toList();
+      final newNodes = _rebuildRubyNodes(tags, rubyText)..addAll(tag10List);
+      line.nodes[slot.nodeIndex] = LyricRuby(
+        baseText: ruby.baseText,
+        rubyNodes: newNodes,
+        joinNext: ruby.joinNext,
+      );
+    } else if (slot.slotIndex == 0) {
       final tag = line.nodes[slot.nodeIndex];
       if (tag is LyricTimeTag) {
         tag.time = timeStr;
       }
+    } else {
+      final tag = line.nodes[slot.nodeIndex];
+      final textIndex = slot.nodeIndex + 1;
+      if (tag is! LyricTimeTag ||
+          textIndex >= line.nodes.length ||
+          line.nodes[textIndex] is! LyricText) {
+        return;
+      }
+      final textNode = line.nodes[textIndex] as LyricText;
+      final tokens = tokenizeTextAdvanced(textNode.text);
+      if (tokens.isEmpty || tokens.first.text.isEmpty) return;
+      final baseText = tokens.first.text;
+      final rightText = textNode.text.substring(baseText.length);
+      final checkCount = _standaloneCheckCount(tag);
+      final tags = <LyricTimeTag>[
+        LyricTimeTag(type: checkCount, time: tag.time),
+        for (var index = 1; index < checkCount; index++)
+          LyricTimeTag(type: null, time: ''),
+      ];
+      tags[slot.slotIndex].time = timeStr;
+      final replacement = <LyricNode>[
+        LyricRuby(baseText: baseText, rubyNodes: tags),
+        if (rightText.isNotEmpty) LyricText(rightText),
+      ];
+      line.nodes.replaceRange(slot.nodeIndex, textIndex + 1, replacement);
     }
 
     _syncRawText();
@@ -580,10 +630,12 @@ class LyricsStateService extends ChangeNotifier {
   int _endTagInsertAfter(TaggingSlot slot, LyricLine line) {
     if (slot.isRuby) {
       final ruby = line.nodes[slot.nodeIndex] as LyricRuby;
-      final totalTags = ruby.rubyNodes
-          .where((node) => node is LyricTimeTag && node.type != 10)
-          .length;
-      return slot.slotIndex == totalTags - 1 ? slot.nodeIndex : -1;
+      final head = ruby.rubyNodes
+          .whereType<LyricTimeTag>()
+          .where((tag) => tag.type != 10)
+          .firstOrNull;
+      final count = head == null ? 0 : _standaloneCheckCount(head);
+      return slot.slotIndex == count - 1 ? slot.nodeIndex : -1;
     }
 
     var insertAfter = slot.nodeIndex + 1;
@@ -607,37 +659,22 @@ class LyricsStateService extends ChangeNotifier {
     final node = line.nodes[ni];
 
     if (node is LyricRuby) {
-      final rubyNode = node;
-      final tags = rubyNode.rubyNodes
-          .whereType<LyricTimeTag>()
-          .where((t) => t.type != 10)
-          .toList();
-      final tag10List = rubyNode.rubyNodes
-          .whereType<LyricTimeTag>()
-          .where((t) => t.type == 10)
-          .toList();
-
-      final textBuf = StringBuffer();
-      for (final rn in rubyNode.rubyNodes) {
-        if (rn is LyricText) textBuf.write(rn.text);
+      final newNodes = List<LyricNode>.from(node.rubyNodes);
+      final headIndex = newNodes.indexWhere(
+        (rubyNode) => rubyNode is LyricTimeTag && rubyNode.type != 10,
+      );
+      if (headIndex == -1) {
+        newNodes.insert(0, LyricTimeTag(type: 1, time: ''));
+      } else {
+        final head = newNodes[headIndex] as LyricTimeTag;
+        final count = _standaloneCheckCount(head);
+        if (count >= 7) return;
+        head.type = count + 1;
       }
-      final rubyText = textBuf.toString();
-
-      tags.add(LyricTimeTag(type: null, time: ''));
-
-      if (tags.isNotEmpty) {
-        tags[0] = LyricTimeTag(type: tags.length, time: tags[0].time);
-      }
-      for (int i = 1; i < tags.length; i++) {
-        tags[i] = LyricTimeTag(type: null, time: tags[i].time);
-      }
-
-      final newNodes = _rebuildRubyNodes(tags, rubyText);
-      if (tag10List.isNotEmpty) newNodes.add(tag10List.first);
-
       line.nodes[ni] = LyricRuby(
-        baseText: rubyNode.baseText,
+        baseText: node.baseText,
         rubyNodes: newNodes,
+        joinNext: node.joinNext,
       );
       _syncRawText();
       notifyListeners();
@@ -657,23 +694,9 @@ class LyricsStateService extends ChangeNotifier {
           tagNodeIndex < line.nodes.length) {
         final precedingNode = line.nodes[tagNodeIndex];
         if (precedingNode is LyricTimeTag && precedingNode.type != 10) {
-          final targetChar = text[0];
-          final rightText = text.substring(1);
-
-          final rubyNodes = <LyricNode>[
-            LyricTimeTag(type: 2, time: precedingNode.time),
-            LyricTimeTag(type: null, time: ''),
-            LyricText(''),
-          ];
-
-          final newRuby = LyricRuby(baseText: targetChar, rubyNodes: rubyNodes);
-
-          final replacement = <LyricNode>[newRuby];
-          if (rightText.isNotEmpty) replacement.add(LyricText(rightText));
-
-          // tagNodeIndex could be separated by spaces? Usually they are adjacent.
-          line.nodes.replaceRange(tagNodeIndex, ni + 1, replacement);
-          _selectionPath = [li, tagNodeIndex, 0, tagNodeIndex];
+          final count = _standaloneCheckCount(precedingNode);
+          if (count >= 7) return;
+          precedingNode.type = count + 1;
           _syncRawText();
           notifyListeners();
           return;
@@ -703,37 +726,9 @@ class LyricsStateService extends ChangeNotifier {
 
     if (node is LyricTimeTag) {
       if (node.type == 10) return;
-      final rubyNodes = <LyricNode>[];
-      String baseText = '';
-      int removeCount = 1;
-
-      rubyNodes.add(LyricTimeTag(type: 2, time: node.time));
-      if (ni + 1 < line.nodes.length && line.nodes[ni + 1] is LyricText) {
-        final textNode = line.nodes[ni + 1] as LyricText;
-        if (textNode.text.isNotEmpty) {
-          baseText = textNode.text[0];
-          final rightText = textNode.text.substring(1);
-          if (rightText.isNotEmpty) {
-            line.nodes[ni + 1] = LyricText(rightText);
-          } else {
-            removeCount = 2;
-          }
-        }
-      } else {
-        return;
-      }
-
-      rubyNodes.add(LyricTimeTag(type: null, time: ''));
-      rubyNodes.add(LyricText(''));
-      final newRuby = LyricRuby(baseText: baseText, rubyNodes: rubyNodes);
-
-      if (removeCount == 2) {
-        line.nodes.replaceRange(ni, ni + 2, [newRuby]);
-      } else {
-        line.nodes[ni] = newRuby;
-      }
-      _selectionPath = [li, ni, 0, ni];
-
+      final count = _standaloneCheckCount(node);
+      if (count >= 7) return;
+      node.type = count + 1;
       _syncRawText();
       notifyListeners();
       return;
@@ -749,49 +744,78 @@ class LyricsStateService extends ChangeNotifier {
 
     final node = line.nodes[ni];
     if (node is LyricRuby) {
-      final tags = node.rubyNodes
-          .whereType<LyricTimeTag>()
-          .where((t) => t.type != 10)
-          .toList();
-      final tag10List = node.rubyNodes
-          .whereType<LyricTimeTag>()
-          .where((t) => t.type == 10)
-          .toList();
+      final newNodes = List<LyricNode>.from(node.rubyNodes);
+      final headIndex = newNodes.indexWhere(
+        (rubyNode) => rubyNode is LyricTimeTag && rubyNode.type != 10,
+      );
+      if (headIndex == -1) return;
+      final head = newNodes[headIndex] as LyricTimeTag;
+      final count = _standaloneCheckCount(head);
+      if (count == 0) return;
 
-      final textBuf = StringBuffer();
-      for (final rn in node.rubyNodes) {
-        if (rn is LyricText) textBuf.write(rn.text);
+      if (count > 1) {
+        head.type = count - 1;
+      } else if (head.time.isNotEmpty) {
+        head.type = null;
+      } else {
+        newNodes.removeAt(headIndex);
       }
-      final rubyText = textBuf.toString();
 
-      if (tags.isNotEmpty) {
-        tags.removeLast();
-        if (tags.isNotEmpty) {
-          tags[0] = LyricTimeTag(type: tags.length, time: tags[0].time);
-          for (int i = 1; i < tags.length; i++) {
-            tags[i] = LyricTimeTag(type: null, time: tags[i].time);
-          }
-        }
+      final hasRubyText = newNodes.any(
+        (rubyNode) => rubyNode is LyricText && rubyNode.text.isNotEmpty,
+      );
+      final remainingTags = newNodes
+          .whereType<LyricTimeTag>()
+          .where((tag) => tag.type != 10)
+          .toList();
+      final tag10List = newNodes
+          .whereType<LyricTimeTag>()
+          .where((tag) => tag.type == 10)
+          .toList();
 
-        final newNodes = _rebuildRubyNodes(tags, rubyText);
-        if (tag10List.isNotEmpty) newNodes.add(tag10List.first);
-
+      if (!hasRubyText &&
+          remainingTags.length <= 1 &&
+          !_isRubyUnitConnected(line, ni, node)) {
+        final replacement = <LyricNode>[
+          ...remainingTags,
+          LyricText(node.baseText),
+          ...tag10List,
+        ];
+        final textNodeIndex = ni + remainingTags.length;
+        line.nodes.replaceRange(ni, ni + 1, replacement);
+        _selectionPath = [
+          li,
+          textNodeIndex,
+          0,
+          remainingTags.isEmpty ? -1 : ni,
+          node.baseText.length,
+        ];
+      } else {
         line.nodes[ni] = LyricRuby(
           baseText: node.baseText,
           rubyNodes: newNodes,
+          joinNext: node.joinNext,
         );
-        _selectionPath = [li, ni, 0, -1];
+        _selectionPath = [li, ni, 0, -1, node.baseText.length];
       }
     } else if (node is LyricTimeTag && node.type != 10) {
-      line.nodes.removeAt(ni);
+      _decrementStandaloneCheck(line, ni);
       _selectionPath = null;
     } else if (node is LyricText) {
       final tagNodeIndex = _selectionPath!.length > 3 ? _selectionPath![3] : -1;
       if (tagNodeIndex != -1 &&
           tagNodeIndex < line.nodes.length &&
-          line.nodes[tagNodeIndex] is LyricTimeTag) {
-        line.nodes.removeAt(tagNodeIndex);
-        _selectionPath = null;
+          line.nodes[tagNodeIndex] is LyricTimeTag &&
+          (line.nodes[tagNodeIndex] as LyricTimeTag).type != 10) {
+        final tagKept = _decrementStandaloneCheck(line, tagNodeIndex);
+        final newTextIndex = tagKept ? ni : ni - 1;
+        _selectionPath = [
+          li,
+          newTextIndex,
+          0,
+          tagKept ? tagNodeIndex : -1,
+          _selectionPath!.length > 4 ? _selectionPath![4] : 1,
+        ];
       }
     }
 
@@ -799,84 +823,113 @@ class LyricsStateService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Merges the selected Ruby node with the next unit (Ruby or Text).
+  /// Marks the selected logical unit as connected to the next one.
+  ///
+  /// RhythmicaLyrics keeps both units independent and only stores a trailing
+  /// full-width plus marker on the left unit. [LyricLine.toLrcString] performs
+  /// the temporary `{base|ruby}` grouping when the document is serialized.
   void mergeSelectedWithNext() {
     if (_document == null || _selectionPath == null) return;
     final li = _selectionPath![0];
-    final ni = _selectionPath![1];
+    var ni = _selectionPath![1];
     final line = _document!.lines[li];
+    if (ni < 0 || ni >= line.nodes.length) return;
 
-    if (ni >= line.nodes.length - 1) return;
+    var current = line.nodes[ni];
+    if (current is LyricText) {
+      final start = (_selectionPath!.length > 2 ? _selectionPath![2] : 0).clamp(
+        0,
+        current.text.length,
+      );
+      final end = _selectedTextEnd(current.text, start);
+      if (start >= end) return;
 
-    final current = line.nodes[ni];
-
-    LyricRuby currentRuby;
-    int currentEndIdx = ni;
-    if (current is LyricRuby) {
-      currentRuby = current;
-    } else {
+      final prefix = current.text.substring(0, start);
+      final selectedText = current.text.substring(start, end);
+      final suffix = current.text.substring(end);
       final rubyNodes = <LyricNode>[];
-      String baseText = '';
-      if (current is LyricTimeTag) {
-        if (current.type == 10) return;
-        rubyNodes.add(current);
-        if (ni + 1 < line.nodes.length && line.nodes[ni + 1] is LyricText) {
-          baseText = (line.nodes[ni + 1] as LyricText).text;
-          currentEndIdx = ni + 1;
-        }
-      } else if (current is LyricText) {
-        baseText = current.text;
-      } else {
-        return;
+      var replaceStart = ni;
+      final tagNodeIndex = _selectionPath!.length > 3 ? _selectionPath![3] : -1;
+      if (start == 0 &&
+          tagNodeIndex == ni - 1 &&
+          tagNodeIndex >= 0 &&
+          line.nodes[tagNodeIndex] is LyricTimeTag &&
+          (line.nodes[tagNodeIndex] as LyricTimeTag).type != 10) {
+        rubyNodes.add(line.nodes[tagNodeIndex]);
+        replaceStart = tagNodeIndex;
       }
-      currentRuby = LyricRuby(baseText: baseText, rubyNodes: rubyNodes);
+
+      final replacement = <LyricNode>[];
+      if (prefix.isNotEmpty) replacement.add(LyricText(prefix));
+      ni = replaceStart + replacement.length;
+      replacement.add(LyricRuby(baseText: selectedText, rubyNodes: rubyNodes));
+      if (suffix.isNotEmpty) replacement.add(LyricText(suffix));
+      line.nodes.replaceRange(
+        replaceStart,
+        _selectionPath![1] + 1,
+        replacement,
+      );
+      current = line.nodes[ni];
     }
 
-    int nextNi = currentEndIdx + 1;
-    while (nextNi < line.nodes.length &&
-        line.nodes[nextNi] is LyricTimeTag &&
-        (line.nodes[nextNi] as LyricTimeTag).type == 10) {
-      nextNi++;
+    if (current is! LyricRuby) return;
+    final chainStart = ni;
+    ni = _rubyChainEndIndex(line, ni);
+    current = line.nodes[ni];
+    if (current is! LyricRuby || current.joinNext) return;
+    if (current.rubyNodes.any(
+      (node) => node is LyricTimeTag && node.type == 10,
+    )) {
+      return;
     }
-    if (nextNi >= line.nodes.length) return;
 
-    final nextNode = line.nodes[nextNi];
+    final nextIndex = ni + 1;
+    if (nextIndex >= line.nodes.length) return;
+    var targetIndex = nextIndex;
+    LyricTimeTag? precedingTag;
+    if (line.nodes[targetIndex] is LyricTimeTag) {
+      final tag = line.nodes[targetIndex] as LyricTimeTag;
+      if (tag.type == 10) return;
+      precedingTag = tag;
+      targetIndex++;
+      if (targetIndex >= line.nodes.length) return;
+    }
+
+    final nextNode = line.nodes[targetIndex];
     LyricRuby nextRuby;
-    int nextEndIdx = nextNi;
-
     if (nextNode is LyricRuby) {
-      nextRuby = nextNode;
+      nextRuby = LyricRuby(
+        baseText: nextNode.baseText,
+        rubyNodes: [?precedingTag, ...nextNode.rubyNodes],
+        joinNext: nextNode.joinNext,
+      );
+      line.nodes.replaceRange(nextIndex, targetIndex + 1, [nextRuby]);
+    } else if (nextNode is LyricText) {
+      final tokens = tokenizeTextAdvanced(nextNode.text);
+      if (tokens.isEmpty || tokens.first.text.isEmpty) return;
+      final nextText = tokens.first.text;
+      final suffix = nextNode.text.substring(nextText.length);
+      nextRuby = LyricRuby(baseText: nextText, rubyNodes: [?precedingTag]);
+      line.nodes.replaceRange(nextIndex, targetIndex + 1, [
+        nextRuby,
+        if (suffix.isNotEmpty) LyricText(suffix),
+      ]);
     } else {
-      final rubyNodes = <LyricNode>[];
-      String baseText = '';
-      if (nextNode is LyricTimeTag) {
-        if (nextNode.type != 10) {
-          rubyNodes.add(nextNode);
-        }
-        if (nextNi + 1 < line.nodes.length &&
-            line.nodes[nextNi + 1] is LyricText) {
-          baseText = (line.nodes[nextNi + 1] as LyricText).text;
-          nextEndIdx = nextNi + 1;
-        }
-      } else if (nextNode is LyricText) {
-        baseText = nextNode.text;
-      }
-      nextRuby = LyricRuby(baseText: baseText, rubyNodes: rubyNodes);
+      return;
     }
-
-    final mergedBase = currentRuby.baseText + nextRuby.baseText;
-    final mergedRubyNodes = <LyricNode>[...currentRuby.rubyNodes];
-
-    mergedRubyNodes.removeWhere((rn) => rn is LyricTimeTag && rn.type == 10);
-
-    mergedRubyNodes.add(LyricText('＋'));
-    mergedRubyNodes.addAll(nextRuby.rubyNodes);
 
     line.nodes[ni] = LyricRuby(
-      baseText: mergedBase,
-      rubyNodes: mergedRubyNodes,
+      baseText: current.baseText,
+      rubyNodes: current.rubyNodes,
+      joinNext: true,
     );
-    line.nodes.removeRange(ni + 1, nextEndIdx + 1);
+    final selectedTextLength =
+        line.nodes
+            .sublist(chainStart, ni + 1)
+            .whereType<LyricRuby>()
+            .fold<int>(0, (length, ruby) => length + ruby.baseText.length) +
+        nextRuby.baseText.length;
+    _selectionPath = [li, chainStart, 0, -1, selectedTextLength];
 
     _syncRawText();
     notifyListeners();
@@ -915,9 +968,10 @@ class LyricsStateService extends ChangeNotifier {
         final text = node.text;
 
         if (charOffset >= 0 && charOffset < text.length) {
-          final targetChar = text[charOffset];
+          final selectedEnd = _selectedTextEnd(text, charOffset);
+          final targetText = text.substring(charOffset, selectedEnd);
           final leftText = text.substring(0, charOffset);
-          final rightText = text.substring(charOffset + 1);
+          final rightText = text.substring(selectedEnd);
 
           bool hasPrecedingTag =
               (charOffset == 0 &&
@@ -933,7 +987,7 @@ class LyricsStateService extends ChangeNotifier {
           if (precedingTag != null) rubyNodes.add(precedingTag);
           rubyNodes.add(LyricText(newRubyText));
 
-          final ruby = LyricRuby(baseText: targetChar, rubyNodes: rubyNodes);
+          final ruby = LyricRuby(baseText: targetText, rubyNodes: rubyNodes);
 
           int startIndex = hasPrecedingTag ? ni - 1 : ni;
           int endIndex = ni + 1;
@@ -946,7 +1000,7 @@ class LyricsStateService extends ChangeNotifier {
           line.nodes.replaceRange(startIndex, endIndex, replacement);
 
           int newNi = startIndex + (leftText.isNotEmpty ? 1 : 0);
-          _selectionPath = [li, newNi, 0];
+          _selectionPath = [li, newNi, 0, -1, targetText.length];
         } else {
           baseText = text;
           rubyNodes.add(LyricText(newRubyText));
@@ -976,9 +1030,16 @@ class LyricsStateService extends ChangeNotifier {
       line.nodes[ni] = LyricRuby(
         baseText: rubyNode.baseText,
         rubyNodes: newNodes,
+        joinNext: rubyNode.joinNext,
       );
     } else {
-      if (tagCount == 0) {
+      if (_isRubyUnitConnected(line, ni, rubyNode)) {
+        line.nodes[ni] = LyricRuby(
+          baseText: rubyNode.baseText,
+          rubyNodes: [...tags, ...tag10List],
+          joinNext: rubyNode.joinNext,
+        );
+      } else if (tagCount == 0) {
         line.nodes[ni] = LyricText(rubyNode.baseText);
       } else if (tagCount == 1) {
         final replacementNodes = <LyricNode>[];
@@ -992,12 +1053,44 @@ class LyricsStateService extends ChangeNotifier {
         line.nodes[ni] = LyricRuby(
           baseText: rubyNode.baseText,
           rubyNodes: tags + tag10List,
+          joinNext: rubyNode.joinNext,
         );
       }
     }
 
     _syncRawText();
     notifyListeners();
+  }
+
+  int _selectedTextEnd(String text, int start) {
+    final selectedLength = _selectionPath != null && _selectionPath!.length > 4
+        ? _selectionPath![4]
+        : 1;
+    final safeLength = selectedLength < 1 ? 1 : selectedLength;
+    final end = start + safeLength;
+    return end > text.length ? text.length : end;
+  }
+
+  int _standaloneCheckCount(LyricTimeTag tag) {
+    final type = tag.type;
+    if (type == null || type == 10) return 0;
+    return type.clamp(0, 7);
+  }
+
+  bool _decrementStandaloneCheck(LyricLine line, int tagIndex) {
+    final tag = line.nodes[tagIndex] as LyricTimeTag;
+    final count = _standaloneCheckCount(tag);
+    if (count == 0) return true;
+    if (count > 1) {
+      tag.type = count - 1;
+      return true;
+    }
+    if (tag.time.isNotEmpty) {
+      tag.type = null;
+      return true;
+    }
+    line.nodes.removeAt(tagIndex);
+    return false;
   }
 
   void toggleEndTag() {
@@ -1011,7 +1104,7 @@ class LyricsStateService extends ChangeNotifier {
 
     int endTagTargetIdx;
     if (node is LyricRuby) {
-      endTagTargetIdx = ni + 1;
+      endTagTargetIdx = _rubyChainEndIndex(line, ni) + 1;
     } else {
       endTagTargetIdx = ni + 1;
       if (node is LyricTimeTag &&
@@ -1046,6 +1139,39 @@ class LyricsStateService extends ChangeNotifier {
     if (ni >= line.nodes.length) return;
 
     final node = line.nodes[ni];
+    if (node is LyricRuby) {
+      final chainEnd = _rubyChainEndIndex(line, ni);
+      if (chainEnd > ni) {
+        final boundaryIndex = chainEnd - 1;
+        final boundary = line.nodes[boundaryIndex] as LyricRuby;
+        line.nodes[boundaryIndex] = LyricRuby(
+          baseText: boundary.baseText,
+          rubyNodes: boundary.rubyNodes,
+        );
+        final selectedTextLength = line.nodes
+            .sublist(ni, boundaryIndex + 1)
+            .whereType<LyricRuby>()
+            .fold<int>(0, (length, ruby) => length + ruby.baseText.length);
+        _collapseUnadornedRubyNodes(line);
+        _selectionPath = [li, ni, 0, -1, selectedTextLength];
+        _syncRawText();
+        notifyListeners();
+        return;
+      }
+    }
+
+    if (node is LyricRuby && node.joinNext) {
+      line.nodes[ni] = LyricRuby(
+        baseText: node.baseText,
+        rubyNodes: node.rubyNodes,
+      );
+      _collapseUnadornedRubyNodes(line);
+      _selectionPath = [li, ni, 0, -1, node.baseText.length];
+      _syncRawText();
+      notifyListeners();
+      return;
+    }
+
     if (node is LyricRuby && node.baseText.length > 1) {
       final replacementNodes = <LyricNode>[];
 
@@ -1130,6 +1256,43 @@ class LyricsStateService extends ChangeNotifier {
       line.nodes.replaceRange(ni, ni + 1, replacementNodes);
       _syncRawText();
       notifyListeners();
+    }
+  }
+
+  int _rubyChainEndIndex(LyricLine line, int startIndex) {
+    var index = startIndex;
+    while (index >= 0 && index < line.nodes.length) {
+      final node = line.nodes[index];
+      if (node is! LyricRuby || !node.joinNext) break;
+      if (index + 1 >= line.nodes.length ||
+          line.nodes[index + 1] is! LyricRuby) {
+        break;
+      }
+      index++;
+    }
+    return index;
+  }
+
+  bool _isRubyUnitConnected(LyricLine line, int nodeIndex, LyricRuby node) {
+    if (node.joinNext) return true;
+    return nodeIndex > 0 &&
+        line.nodes[nodeIndex - 1] is LyricRuby &&
+        (line.nodes[nodeIndex - 1] as LyricRuby).joinNext;
+  }
+
+  void _collapseUnadornedRubyNodes(LyricLine line) {
+    for (var index = 0; index < line.nodes.length; index++) {
+      final node = line.nodes[index];
+      if (node is! LyricRuby || node.joinNext || node.rubyNodes.isNotEmpty) {
+        continue;
+      }
+      final isTailOfJoin =
+          index > 0 &&
+          line.nodes[index - 1] is LyricRuby &&
+          (line.nodes[index - 1] as LyricRuby).joinNext;
+      if (!isTailOfJoin) {
+        line.nodes[index] = LyricText(node.baseText);
+      }
     }
   }
 
@@ -1222,7 +1385,11 @@ class LyricsStateService extends ChangeNotifier {
               ...node.rubyNodes,
             ];
             newNodes.add(
-              LyricRuby(baseText: node.baseText, rubyNodes: newRubyNodes),
+              LyricRuby(
+                baseText: node.baseText,
+                rubyNodes: newRubyNodes,
+                joinNext: node.joinNext,
+              ),
             );
           } else {
             // Even if it has tags, if there is a redundant empty tag right before it, absorb or discard it
@@ -1246,7 +1413,7 @@ class LyricsStateService extends ChangeNotifier {
 
             // Do not add tag for purely whitespace or punctuation tokens
             bool hasReadableText = RegExp(
-              r'[a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF]',
+              r'[a-zA-Z0-9\uFF10-\uFF19\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF]',
             ).hasMatch(token.text);
             if (!hasReadableText) {
               newNodes.add(LyricText(token.text));
@@ -1386,9 +1553,8 @@ class LyricsStateService extends ChangeNotifier {
     final tokens = <TextToken>[];
     final buffer = StringBuffer();
 
-    final RegExp asciiRegex = RegExp(
-      r'[a-zA-Z0-9\uFF21-\uFF3A\uFF41-\uFF5A\uFF10-\uFF19]',
-    );
+    final RegExp asciiRegex = RegExp(r'[a-zA-Z0-9\uFF21-\uFF3A\uFF41-\uFF5A]');
+    final RegExp fullWidthDigitRegex = RegExp(r'[\uFF10-\uFF19]');
     final RegExp cjkRegex = RegExp(
       r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF]',
     );
@@ -1399,17 +1565,23 @@ class LyricsStateService extends ChangeNotifier {
     int i = 0;
     while (i < text.length) {
       final char = text[i];
-      if (asciiRegex.hasMatch(char)) {
+      if (fullWidthDigitRegex.hasMatch(char)) {
+        tokens.add(TextToken(char, false));
+        i++;
+      } else if (asciiRegex.hasMatch(char)) {
         buffer.write(char);
         i++;
-        while (i < text.length && asciiRegex.hasMatch(text[i])) {
+        while (i < text.length &&
+            asciiRegex.hasMatch(text[i]) &&
+            !fullWidthDigitRegex.hasMatch(text[i])) {
           buffer.write(text[i]);
           i++;
         }
         while (i < text.length &&
             (punctRegex.hasMatch(text[i]) ||
                 (!asciiRegex.hasMatch(text[i]) &&
-                    !cjkRegex.hasMatch(text[i])))) {
+                    !cjkRegex.hasMatch(text[i]) &&
+                    !fullWidthDigitRegex.hasMatch(text[i])))) {
           buffer.write(text[i]);
           i++;
         }
@@ -1428,7 +1600,8 @@ class LyricsStateService extends ChangeNotifier {
         while (i < text.length &&
             (punctRegex.hasMatch(text[i]) ||
                 (!asciiRegex.hasMatch(text[i]) &&
-                    !cjkRegex.hasMatch(text[i])))) {
+                    !cjkRegex.hasMatch(text[i]) &&
+                    !fullWidthDigitRegex.hasMatch(text[i])))) {
           buffer.write(text[i]);
           i++;
         }

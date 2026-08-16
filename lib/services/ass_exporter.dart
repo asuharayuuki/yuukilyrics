@@ -1850,37 +1850,18 @@ class AssExporter {
         settings.singerAvatarGap.toDouble() +
         _resolveFontOutlineWidth(fs, settings.fontOutlineWidth) +
         settings.outlineWidth * 0.5;
-    var totalAvatarHeight = 0.0;
+    // Reserve one identical avatar area per lyric line. Using each bitmap's
+    // rendered height would give the same lyric row a different Y coordinate
+    // for square, portrait, and landscape avatars.
+    final avatarSlotHeight = avatarDrawings.isEmpty
+        ? 0.0
+        : _resolveSingerAvatarSize(settings) + avatarVerticalGap;
     for (final line in block.lines) {
       final singerIndex = lineSingerMap[line.astLine];
       final avatars = _avatarsForSinger(settings, singerIndex, avatarDrawings);
       lineAvatars[line] = avatars;
-      final inlineIndices = <int>[
-        for (final row in line.rows)
-          for (final node in row)
-            if (node is _SingerMarkerNode && !node.isLeading) node.singerIndex,
-      ];
-      var maxAvatarHeight = avatars.isEmpty
-          ? 0.0
-          : avatars
-                .map((avatar) => avatar.height)
-                .reduce((a, b) => a > b ? a : b);
-      for (final inlineIndex in inlineIndices) {
-        final inlineAvatars = _avatarsForSinger(
-          settings,
-          inlineIndex,
-          avatarDrawings,
-        );
-        for (final avatar in inlineAvatars) {
-          if (avatar.height > maxAvatarHeight) {
-            maxAvatarHeight = avatar.height;
-          }
-        }
-      }
-      if (maxAvatarHeight > 0) {
-        totalAvatarHeight += maxAvatarHeight + avatarVerticalGap;
-      }
     }
+    final totalAvatarHeight = block.lines.length * avatarSlotHeight;
 
     int totalRows = 0;
     for (var l in block.lines) {
@@ -1916,7 +1897,8 @@ class AssExporter {
 
       final maximumShift = max(0, 4 - totalRows);
       for (var shift = 0; shift <= maximumShift; shift++) {
-        final candidateStartY = startY - shift * lineSpacing;
+        final candidateStartY =
+            startY - shift * (lineSpacing + avatarSlotHeight);
         var available = true;
         for (var rowIndex = 0; rowIndex < totalRows; rowIndex++) {
           final candidateY = candidateStartY + rowIndex * lineSpacing;
@@ -1937,10 +1919,10 @@ class AssExporter {
     if (settings.pagingMode == AssPagingMode.auto2Lines && totalRows == 1) {
       Duration expectedDisplayStart =
           block.lines.first.startTime - const Duration(milliseconds: 3000);
-      int roundedYLast = yLast.round();
+      int roundedYLast = (yLast - avatarSlotHeight).round();
       if (yEndTimes.containsKey(roundedYLast)) {
         if (expectedDisplayStart < yEndTimes[roundedYLast]!) {
-          startY = yLast - lineSpacing - totalAvatarHeight;
+          startY -= lineSpacing + avatarSlotHeight;
         }
       }
     }
@@ -2203,8 +2185,8 @@ class AssExporter {
             displayEnd: displayEnds.last,
           );
         }
-        currentAvatarOffset += avatarHeight + avatarVerticalGap;
       }
+      currentAvatarOffset += avatarSlotHeight;
     }
   }
 
