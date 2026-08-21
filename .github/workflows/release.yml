@@ -44,6 +44,11 @@ jobs:
     needs: validate
     uses: ./.github/workflows/build-ios.yml
 
+  macos:
+    name: macOS
+    needs: validate
+    uses: ./.github/workflows/build-macos.yml
+
   windows:
     name: Windows x64
     needs: validate
@@ -54,6 +59,7 @@ jobs:
     needs:
       - android
       - ios
+      - macos
       - windows
     runs-on: ubuntu-latest
     permissions:
@@ -77,8 +83,8 @@ jobs:
           set -euo pipefail
           mapfile -t ASSETS < <(find dist -maxdepth 1 -type f -print | sort)
 
-          if [ "${#ASSETS[@]}" -ne 3 ]; then
-            echo "ERROR: Expected 3 release assets, found ${#ASSETS[@]}"
+          if [ "${#ASSETS[@]}" -ne 4 ]; then
+            echo "ERROR: Expected 4 release assets, found ${#ASSETS[@]}"
             printf '%s\n' "${ASSETS[@]}"
             exit 1
           fi
