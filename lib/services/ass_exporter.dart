@@ -108,6 +108,80 @@ class _AssAvatarDrawing {
   });
 }
 
+class _AvatarColorSample {
+  final int red;
+  final int green;
+  final int blue;
+  final int weight;
+  final double lightness;
+  final double greenRed;
+  final double blueYellow;
+
+  const _AvatarColorSample({
+    required this.red,
+    required this.green,
+    required this.blue,
+    required this.weight,
+    required this.lightness,
+    required this.greenRed,
+    required this.blueYellow,
+  });
+
+  int get rgb => (red << 16) | (green << 8) | blue;
+}
+
+class _AvatarColorBox {
+  final List<_AvatarColorSample> samples;
+  final int totalWeight;
+  final double lightnessRange;
+  final double greenRedRange;
+  final double blueYellowRange;
+
+  _AvatarColorBox(this.samples)
+    : totalWeight = samples.fold(0, (sum, sample) => sum + sample.weight),
+      lightnessRange = _rangeOf(samples, (sample) => sample.lightness),
+      greenRedRange = _rangeOf(samples, (sample) => sample.greenRed),
+      blueYellowRange = _rangeOf(samples, (sample) => sample.blueYellow);
+
+  double get widestRange =>
+      max(lightnessRange, max(greenRedRange, blueYellowRange));
+
+  static double _rangeOf(
+    List<_AvatarColorSample> samples,
+    double Function(_AvatarColorSample sample) component,
+  ) {
+    if (samples.length < 2) return 0;
+    var minimum = component(samples.first);
+    var maximum = minimum;
+    for (final sample in samples.skip(1)) {
+      final value = component(sample);
+      if (value < minimum) minimum = value;
+      if (value > maximum) maximum = value;
+    }
+    return maximum - minimum;
+  }
+}
+
+class _AvatarPaletteColor {
+  final int red;
+  final int green;
+  final int blue;
+  final double lightness;
+  final double greenRed;
+  final double blueYellow;
+
+  const _AvatarPaletteColor({
+    required this.red,
+    required this.green,
+    required this.blue,
+    required this.lightness,
+    required this.greenRed,
+    required this.blueYellow,
+  });
+
+  int get rgb => (red << 16) | (green << 8) | blue;
+}
+
 class AssExporter {
   // Fixed 1080p geometry measured from the default Kosugi Maru countdown.
   // These values are intentionally independent of every lyric font setting.
@@ -576,25 +650,45 @@ class AssExporter {
       final rgba = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (rgba == null) return null;
 
+      final colorWeights = <int, int>{};
+      for (var offset = 0; offset < rgba.lengthInBytes; offset += 4) {
+        final alpha = rgba.getUint8(offset + 3);
+        if (alpha < 16) continue;
+        final rgb =
+            (rgba.getUint8(offset) << 16) |
+            (rgba.getUint8(offset + 1) << 8) |
+            rgba.getUint8(offset + 2);
+        colorWeights.update(
+          rgb,
+          (weight) => weight + alpha,
+          ifAbsent: () => alpha,
+        );
+      }
+      final palette = _buildAvatarPalette(colorWeights, maxColors: 96);
+      final colorCache = <int, int>{};
       final pathsByColor = <int, StringBuffer>{};
       for (var y = 0; y < image.height; y++) {
         var x = 0;
         while (x < image.width) {
           final offset = (y * image.width + x) * 4;
-          final key = _quantizedAvatarColorKey(
+          final key = _adaptiveAvatarColorKey(
             rgba.getUint8(offset),
             rgba.getUint8(offset + 1),
             rgba.getUint8(offset + 2),
             rgba.getUint8(offset + 3),
+            palette,
+            colorCache,
           );
           var runEnd = x + 1;
           while (runEnd < image.width) {
             final nextOffset = (y * image.width + runEnd) * 4;
-            final nextKey = _quantizedAvatarColorKey(
+            final nextKey = _adaptiveAvatarColorKey(
               rgba.getUint8(nextOffset),
               rgba.getUint8(nextOffset + 1),
               rgba.getUint8(nextOffset + 2),
               rgba.getUint8(nextOffset + 3),
+              palette,
+              colorCache,
             );
             if (nextKey != key) break;
             runEnd++;
@@ -638,15 +732,187 @@ class AssExporter {
     }
   }
 
-  static int _quantizedAvatarColorKey(int red, int green, int blue, int alpha) {
+  static List<_AvatarPaletteColor> _buildAvatarPalette(
+    Map<int, int> colorWeights, {
+    required int maxColors,
+  }) {
+    if (colorWeights.isEmpty) return const [];
+    final samples = colorWeights.entries
+        .map((entry) => _avatarColorSample(entry.key, entry.value))
+        .toList();
+    if (samples.length <= maxColors) {
+      samples.sort((a, b) => b.weight.compareTo(a.weight));
+      return samples.map(_paletteColorFromSample).toList(growable: false);
+    }
+
+    final boxes = <_AvatarColorBox>[_AvatarColorBox(samples)];
+    while (boxes.length < maxColors) {
+      var bestIndex = -1;
+      var bestScore = -1.0;
+      for (var index = 0; index < boxes.length; index++) {
+        final box = boxes[index];
+        if (box.samples.length < 2 || box.widestRange <= 0) continue;
+        final score = box.widestRange * (1 + log(box.totalWeight));
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = index;
+        }
+      }
+      if (bestIndex < 0) break;
+
+      final split = _splitAvatarColorBox(boxes.removeAt(bestIndex));
+      if (split == null) break;
+      boxes
+        ..add(split.$1)
+        ..add(split.$2);
+    }
+
+    final paletteByRgb = <int, _AvatarPaletteColor>{};
+    for (final box in boxes) {
+      final representative = _representativeAvatarColor(box);
+      paletteByRgb[representative.rgb] = representative;
+    }
+    return paletteByRgb.values.toList(growable: false);
+  }
+
+  static (_AvatarColorBox, _AvatarColorBox)? _splitAvatarColorBox(
+    _AvatarColorBox box,
+  ) {
+    if (box.samples.length < 2) return null;
+    final samples = List<_AvatarColorSample>.from(box.samples);
+    if (box.lightnessRange >= box.greenRedRange &&
+        box.lightnessRange >= box.blueYellowRange) {
+      samples.sort((a, b) => a.lightness.compareTo(b.lightness));
+    } else if (box.greenRedRange >= box.blueYellowRange) {
+      samples.sort((a, b) => a.greenRed.compareTo(b.greenRed));
+    } else {
+      samples.sort((a, b) => a.blueYellow.compareTo(b.blueYellow));
+    }
+
+    final halfWeight = box.totalWeight / 2;
+    var accumulatedWeight = 0;
+    var splitIndex = 1;
+    for (var index = 0; index < samples.length - 1; index++) {
+      accumulatedWeight += samples[index].weight;
+      splitIndex = index + 1;
+      if (accumulatedWeight >= halfWeight) break;
+    }
+    return (
+      _AvatarColorBox(samples.sublist(0, splitIndex)),
+      _AvatarColorBox(samples.sublist(splitIndex)),
+    );
+  }
+
+  static _AvatarPaletteColor _representativeAvatarColor(_AvatarColorBox box) {
+    var lightness = 0.0;
+    var greenRed = 0.0;
+    var blueYellow = 0.0;
+    for (final sample in box.samples) {
+      lightness += sample.lightness * sample.weight;
+      greenRed += sample.greenRed * sample.weight;
+      blueYellow += sample.blueYellow * sample.weight;
+    }
+    lightness /= box.totalWeight;
+    greenRed /= box.totalWeight;
+    blueYellow /= box.totalWeight;
+
+    var closest = box.samples.first;
+    var closestDistance = double.infinity;
+    for (final sample in box.samples) {
+      final dl = sample.lightness - lightness;
+      final da = sample.greenRed - greenRed;
+      final db = sample.blueYellow - blueYellow;
+      final distance = dl * dl + da * da + db * db;
+      if (distance < closestDistance) {
+        closest = sample;
+        closestDistance = distance;
+      }
+    }
+    return _paletteColorFromSample(closest);
+  }
+
+  static int _adaptiveAvatarColorKey(
+    int red,
+    int green,
+    int blue,
+    int alpha,
+    List<_AvatarPaletteColor> palette,
+    Map<int, int> colorCache,
+  ) {
     if (alpha < 16) return 0;
-    int quantizeColor(int value) => ((value * 4 + 127) ~/ 255) * 255 ~/ 4;
-    int quantizeAlpha(int value) => ((value * 7 + 127) ~/ 255) * 255 ~/ 7;
-    final a = quantizeAlpha(alpha);
-    final r = quantizeColor(red);
-    final g = quantizeColor(green);
-    final b = quantizeColor(blue);
-    return (a << 24) | (r << 16) | (g << 8) | b;
+    final sourceRgb = (red << 16) | (green << 8) | blue;
+    final targetRgb = colorCache.putIfAbsent(sourceRgb, () {
+      if (palette.isEmpty) return sourceRgb;
+      final source = _avatarColorSample(sourceRgb, 1);
+      var closest = palette.first;
+      var closestDistance = double.infinity;
+      for (final candidate in palette) {
+        final dl = source.lightness - candidate.lightness;
+        final da = source.greenRed - candidate.greenRed;
+        final db = source.blueYellow - candidate.blueYellow;
+        final distance = dl * dl + da * da + db * db;
+        if (distance < closestDistance) {
+          closest = candidate;
+          closestDistance = distance;
+        }
+      }
+      return closest.rgb;
+    });
+    final alphaStep = (alpha * 7 + 127) ~/ 255;
+    if (alphaStep == 0) return 0;
+    final quantizedAlpha = alphaStep * 255 ~/ 7;
+    return (quantizedAlpha << 24) | targetRgb;
+  }
+
+  static _AvatarColorSample _avatarColorSample(int rgb, int weight) {
+    final red = (rgb >> 16) & 0xFF;
+    final green = (rgb >> 8) & 0xFF;
+    final blue = rgb & 0xFF;
+    final perceptual = _rgbToOklab(red, green, blue);
+    return _AvatarColorSample(
+      red: red,
+      green: green,
+      blue: blue,
+      weight: weight,
+      lightness: perceptual.$1,
+      greenRed: perceptual.$2,
+      blueYellow: perceptual.$3,
+    );
+  }
+
+  static _AvatarPaletteColor _paletteColorFromSample(
+    _AvatarColorSample sample,
+  ) => _AvatarPaletteColor(
+    red: sample.red,
+    green: sample.green,
+    blue: sample.blue,
+    lightness: sample.lightness,
+    greenRed: sample.greenRed,
+    blueYellow: sample.blueYellow,
+  );
+
+  static (double, double, double) _rgbToOklab(int red, int green, int blue) {
+    double linear(int value) {
+      final channel = value / 255.0;
+      return channel <= 0.04045
+          ? channel / 12.92
+          : pow((channel + 0.055) / 1.055, 2.4).toDouble();
+    }
+
+    final r = linear(red);
+    final g = linear(green);
+    final b = linear(blue);
+    final l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+    final m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+    final s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+    final lRoot = pow(l, 1 / 3).toDouble();
+    final mRoot = pow(m, 1 / 3).toDouble();
+    final sRoot = pow(s, 1 / 3).toDouble();
+    return (
+      0.2104542553 * lRoot + 0.7936177850 * mRoot - 0.0040720468 * sRoot,
+      1.9779984951 * lRoot - 2.4285922050 * mRoot + 0.4505937099 * sRoot,
+      0.0259040371 * lRoot + 0.7827717662 * mRoot - 0.8086757660 * sRoot,
+    );
   }
 
   static void _writeHeader(
