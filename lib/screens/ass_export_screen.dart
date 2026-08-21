@@ -23,6 +23,7 @@ import 'package:flutter/services.dart'
         LengthLimitingTextInputFormatter;
 import '../services/ffmpeg_service.dart';
 import '../services/singer_avatar_library_service.dart';
+import '../services/typography_settings_service.dart';
 import 'dart:math';
 import '../l10n/l10n.dart';
 import '../widgets/font_face_preview_text.dart';
@@ -392,6 +393,9 @@ class AssExportSettings {
 }
 
 class AssExportPageState {
+  final TypographySettingsService _typographySettingsService =
+      TypographySettingsService();
+  int _typographyRevision = 0;
   String? _customFontPath;
   String _fontName = FontService.bundledFontFamily;
   String _fontDisplayName = FontService.bundledFontFamily;
@@ -437,6 +441,63 @@ class AssExportPageState {
   double _interludeThreshold = 10.0;
   int _horizontalMargin = 100;
   int? _baselineResolutionHeight;
+
+  TypographySettingsData get _typographySettings => TypographySettingsData(
+    fontSize: _fontSize,
+    letterSpacingStep: _letterSpacingStep,
+    decorationWidth: _outlineWidth,
+    fontOutlineWidth: _fontOutlineWidth,
+    rubyFontSize: _rubyFontSize,
+    rubyOutlineWidth: _rubyOutlineWidth,
+    rubyBaseGap: _rubyBaseGap,
+    lineSpacing: _lineSpacing,
+    lyricsBottomMargin: _lyricsBottomMargin,
+    singerAvatarSize: _singerAvatarSize,
+    singerAvatarGap: _singerAvatarGap,
+  );
+
+  Future<bool> loadTypographySettings() async {
+    final revision = _typographyRevision;
+    try {
+      final loaded = await _typographySettingsService.load(
+        fallback: _typographySettings,
+      );
+      if (loaded == null || revision != _typographyRevision) return false;
+      _setTypographySettings(loaded);
+      return true;
+    } catch (error) {
+      debugPrint('Failed to load typography settings: $error');
+      return false;
+    }
+  }
+
+  void applyTypographySettings(TypographySettingsData settings) {
+    _typographyRevision++;
+    _setTypographySettings(settings);
+    unawaited(_saveTypographySettings(settings));
+  }
+
+  void _setTypographySettings(TypographySettingsData settings) {
+    _fontSize = settings.fontSize;
+    _letterSpacingStep = settings.letterSpacingStep;
+    _outlineWidth = settings.decorationWidth;
+    _fontOutlineWidth = settings.fontOutlineWidth;
+    _rubyFontSize = settings.rubyFontSize;
+    _rubyOutlineWidth = settings.rubyOutlineWidth;
+    _rubyBaseGap = settings.rubyBaseGap;
+    _lineSpacing = settings.lineSpacing;
+    _lyricsBottomMargin = settings.lyricsBottomMargin;
+    _singerAvatarSize = settings.singerAvatarSize;
+    _singerAvatarGap = settings.singerAvatarGap;
+  }
+
+  Future<void> _saveTypographySettings(TypographySettingsData settings) async {
+    try {
+      await _typographySettingsService.save(settings);
+    } catch (error) {
+      debugPrint('Failed to save typography settings: $error');
+    }
+  }
 }
 
 class AssExportScreen extends StatefulWidget {
@@ -618,28 +679,16 @@ class _AssExportScreenState extends State<AssExportScreen> {
   set _defaultColorPreset(SingerColorPreset value) =>
       _pageState._defaultColorPreset = value;
   double get _fontSize => _pageState._fontSize;
-  set _fontSize(double value) => _pageState._fontSize = value;
   int get _letterSpacingStep => _pageState._letterSpacingStep;
-  set _letterSpacingStep(int value) => _pageState._letterSpacingStep = value;
   double get _outlineWidth => _pageState._outlineWidth;
-  set _outlineWidth(double value) => _pageState._outlineWidth = value;
   double? get _fontOutlineWidth => _pageState._fontOutlineWidth;
-  set _fontOutlineWidth(double? value) => _pageState._fontOutlineWidth = value;
   double? get _rubyFontSize => _pageState._rubyFontSize;
-  set _rubyFontSize(double? value) => _pageState._rubyFontSize = value;
   double? get _rubyOutlineWidth => _pageState._rubyOutlineWidth;
-  set _rubyOutlineWidth(double? value) => _pageState._rubyOutlineWidth = value;
   double? get _rubyBaseGap => _pageState._rubyBaseGap;
-  set _rubyBaseGap(double? value) => _pageState._rubyBaseGap = value;
   double? get _lineSpacing => _pageState._lineSpacing;
-  set _lineSpacing(double? value) => _pageState._lineSpacing = value;
   double get _lyricsBottomMargin => _pageState._lyricsBottomMargin;
-  set _lyricsBottomMargin(double value) =>
-      _pageState._lyricsBottomMargin = value;
   double? get _singerAvatarSize => _pageState._singerAvatarSize;
-  set _singerAvatarSize(double? value) => _pageState._singerAvatarSize = value;
   double get _singerAvatarGap => _pageState._singerAvatarGap;
-  set _singerAvatarGap(double value) => _pageState._singerAvatarGap = value;
   int get _blurLevel => _pageState._blurLevel;
   set _blurLevel(int value) => _pageState._blurLevel = value;
   int get _resolutionHeight => _pageState._resolutionHeight;
@@ -2099,19 +2148,22 @@ class _AssExportScreenState extends State<AssExportScreen> {
     );
     if (result == null || !mounted) return;
 
-    setState(() {
-      _fontSize = result.fontSize;
-      _letterSpacingStep = result.letterSpacingStep;
-      _outlineWidth = result.decorationWidth;
-      _fontOutlineWidth = result.fontOutlineWidth;
-      _rubyFontSize = result.rubyFontSize;
-      _rubyOutlineWidth = result.rubyOutlineWidth;
-      _rubyBaseGap = result.rubyBaseGap;
-      _lineSpacing = result.lineSpacing;
-      _lyricsBottomMargin = result.lyricsBottomMargin;
-      _singerAvatarSize = result.singerAvatarSize;
-      _singerAvatarGap = result.singerAvatarGap;
-    });
+    _pageState.applyTypographySettings(
+      TypographySettingsData(
+        fontSize: result.fontSize,
+        letterSpacingStep: result.letterSpacingStep,
+        decorationWidth: result.decorationWidth,
+        fontOutlineWidth: result.fontOutlineWidth,
+        rubyFontSize: result.rubyFontSize,
+        rubyOutlineWidth: result.rubyOutlineWidth,
+        rubyBaseGap: result.rubyBaseGap,
+        lineSpacing: result.lineSpacing,
+        lyricsBottomMargin: result.lyricsBottomMargin,
+        singerAvatarSize: result.singerAvatarSize,
+        singerAvatarGap: result.singerAvatarGap,
+      ),
+    );
+    setState(() {});
   }
 
   AssExportSettings _getCurrentSettings() {

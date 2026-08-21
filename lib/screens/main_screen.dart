@@ -65,6 +65,12 @@ class _MainScreenState extends State<MainScreen> {
     _avatarLibrary.refresh();
     _fontLibrary.refresh();
     _colorPresetLibrary.load();
+    _loadTypographySettings();
+  }
+
+  Future<void> _loadTypographySettings() async {
+    final changed = await _assExportPageState.loadTypographySettings();
+    if (changed && mounted) setState(() {});
   }
 
   @override
