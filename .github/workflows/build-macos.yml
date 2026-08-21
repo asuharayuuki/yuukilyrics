@@ -1,0 +1,127 @@
+name: Build macOS App
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build-macos:
+    name: Build macOS App
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.0'
+
+      - name: Show build environment
+        run: |
+          flutter --version
+          xcodebuild -version
+          swift --version
+          uname -m
+          sw_vers
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build macOS app
+        run: |
+          set -o pipefail
+          flutter build macos --release 2>&1 | tee build.log
+
+      - name: Extract version info
+        id: version
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          VERSION="${APP_VERSION%%+*}"
+          if [[ "$APP_VERSION" == *"+"* ]]; then
+            BUILD="${APP_VERSION#*+}"
+            ARTIFACT_VERSION="${VERSION}+${BUILD}"
+          else
+            BUILD=""
+            ARTIFACT_VERSION="$VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "artifact_version=$ARTIFACT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION, Build: ${BUILD:-none}"
+
+      - name: Prepare artifact
+        id: artifact
+        run: |
+          set -euo pipefail
+
+          RELEASE_DIR="build/macos/Build/Products/Release"
+          if [[ ! -d "$RELEASE_DIR" ]]; then
+            echo "ERROR: macOS release directory not found at $RELEASE_DIR"
+            exit 1
+          fi
+
+          APP_COUNT=0
+          APP_PATH=""
+          for CANDIDATE in "$RELEASE_DIR"/*.app; do
+            [[ -d "$CANDIDATE" ]] || continue
+            APP_PATH="$CANDIDATE"
+            APP_COUNT=$((APP_COUNT + 1))
+          done
+
+          if [[ "$APP_COUNT" -ne 1 ]]; then
+            echo "ERROR: Expected one macOS app, found $APP_COUNT"
+            ls -la "$RELEASE_DIR"
+            exit 1
+          fi
+
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist")
+          ARCHS=$(lipo -archs "$APP_PATH/Contents/MacOS/$EXECUTABLE")
+
+          if [[ "$ARCHS" == *"arm64"* && "$ARCHS" == *"x86_64"* ]]; then
+            ARCH_LABEL="universal"
+          elif [[ "$ARCHS" == *"arm64"* ]]; then
+            ARCH_LABEL="arm64"
+          elif [[ "$ARCHS" == *"x86_64"* ]]; then
+            ARCH_LABEL="x64"
+          else
+            echo "ERROR: Unsupported macOS architecture: $ARCHS"
+            exit 1
+          fi
+
+          mkdir -p dist
+          ARTIFACT_VERSION="${{ steps.version.outputs.artifact_version }}"
+          ARTIFACT_PATH="dist/yuukilyrics-${ARTIFACT_VERSION}-macos-${ARCH_LABEL}-release.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARTIFACT_PATH"
+
+          echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+          echo "Architectures: $ARCHS"
+          echo "Artifact prepared:"
+          ls -lh "$ARTIFACT_PATH"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: yuukilyrics-macos
+          path: ${{ steps.artifact.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-logs-macos
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
