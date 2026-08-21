@@ -15,6 +15,7 @@ class AssLineData {
   final double width;
   final Duration startTime;
   final Duration endTime;
+  final List<int?> rowLeadingSingerIndices;
   final Map<LyricNode, Duration> nodeStartTimes;
   final Map<LyricNode, Duration> nodeEndTimes;
 
@@ -25,6 +26,7 @@ class AssLineData {
     required this.width,
     required this.startTime,
     required this.endTime,
+    required this.rowLeadingSingerIndices,
     required this.nodeStartTimes,
     required this.nodeEndTimes,
   });
@@ -352,7 +354,12 @@ class AssExporter {
     }
 
     final renderDocument = LyricDocument(lines: renderLines);
-    final blocks = _groupLinesIntoBlocks(renderDocument, settings, textMetrics);
+    final blocks = _groupLinesIntoBlocks(
+      renderDocument,
+      settings,
+      textMetrics,
+      lineSingerMap,
+    );
 
     Map<int, Duration> yEndTimes = {};
     Duration lastInterludeEnd = Duration.zero;
@@ -393,7 +400,6 @@ class AssExporter {
         settings,
         yEndTimes,
         lastInterludeEnd,
-        lineSingerMap,
         avatarDrawings,
         textMetrics,
       );
@@ -1329,6 +1335,7 @@ class AssExporter {
     LyricDocument doc,
     AssExportSettings settings,
     _AssTextMetrics textMetrics,
+    Map<LyricLine, int> lineSingerMap,
   ) {
     final blocks = <AssBlock>[];
     List<AssLineData> currentBlock = [];
@@ -1681,8 +1688,41 @@ class AssExporter {
         );
       }
 
-      width = rowWidths.isEmpty ? 0 : rowWidths.reduce((a, b) => a > b ? a : b);
+      // Wrapped rows keep their source line's alignment slot, but each row gets
+      // its own singer state for avatar placement and collision-safe layout.
+      var activeSingerIndex = lineSingerMap[line];
+      final rowLeadingSingerIndices = <int?>[];
+      for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        final normalizedRow = <LyricNode>[];
+        var leadingSingerIndex = activeSingerIndex;
+        var hasVisibleLyrics = false;
 
+        for (final node in rows[rowIndex]) {
+          if (node is _SingerMarkerNode) {
+            activeSingerIndex = node.singerIndex;
+            final isLeading = !hasVisibleLyrics;
+            if (isLeading) leadingSingerIndex = node.singerIndex;
+            normalizedRow.add(
+              _SingerMarkerNode(
+                singerIndex: node.singerIndex,
+                isLeading: isLeading,
+                displayText: node.text,
+              ),
+            );
+            continue;
+          }
+
+          normalizedRow.add(node);
+          if (node is LyricRuby ||
+              (node is LyricText && node.text.isNotEmpty)) {
+            hasVisibleLyrics = true;
+          }
+        }
+        rows[rowIndex] = normalizedRow;
+        rowLeadingSingerIndices.add(leadingSingerIndex);
+      }
+
+      width = rowWidths.isEmpty ? 0 : rowWidths.reduce((a, b) => a > b ? a : b);
       final lineData = AssLineData(
         astLine: line,
         rows: rows,
@@ -1690,13 +1730,14 @@ class AssExporter {
         width: width,
         startTime: startTime,
         endTime: endTime,
+        rowLeadingSingerIndices: rowLeadingSingerIndices,
         nodeStartTimes: nodeStartTimes,
         nodeEndTimes: nodeEndTimes,
       );
 
       if (currentBlock.isNotEmpty) {
-        Duration gap = startTime - currentBlock.last.endTime;
-        int threshold = settings.pagingMode == AssPagingMode.auto2Lines
+        final gap = startTime - currentBlock.last.endTime;
+        final threshold = settings.pagingMode == AssPagingMode.auto2Lines
             ? 4000
             : settings.interludeThresholdSeconds * 1000;
         if (gap.inMilliseconds >= threshold) {
@@ -1763,7 +1804,6 @@ class AssExporter {
     AssExportSettings settings,
     Map<int, Duration> yEndTimes,
     Duration lastInterludeEnd,
-    Map<LyricLine, int> lineSingerMap,
     Map<String, _AssAvatarDrawing> avatarDrawings,
     _AssTextMetrics textMetrics,
   ) {
@@ -1844,29 +1884,23 @@ class AssExporter {
     final lineSpacing =
         settings.lineSpacing?.toDouble() ?? automaticLineSpacing;
 
-    final lineAvatars = <AssLineData, List<_AssAvatarDrawing>>{};
     final avatarHorizontalGap = max(4.0, fs * 0.06);
     final avatarVerticalGap =
         settings.singerAvatarGap.toDouble() +
         _resolveFontOutlineWidth(fs, settings.fontOutlineWidth) +
         settings.outlineWidth * 0.5;
-    // Reserve one identical avatar area per lyric line. Using each bitmap's
+    // Reserve one identical avatar area per visual row. Using each bitmap's
     // rendered height would give the same lyric row a different Y coordinate
     // for square, portrait, and landscape avatars.
     final avatarSlotHeight = avatarDrawings.isEmpty
         ? 0.0
         : _resolveSingerAvatarSize(settings) + avatarVerticalGap;
-    for (final line in block.lines) {
-      final singerIndex = lineSingerMap[line.astLine];
-      final avatars = _avatarsForSinger(settings, singerIndex, avatarDrawings);
-      lineAvatars[line] = avatars;
-    }
-    final totalAvatarHeight = block.lines.length * avatarSlotHeight;
 
     int totalRows = 0;
     for (var l in block.lines) {
       totalRows += l.rows.length;
     }
+    final totalAvatarHeight = totalRows * avatarSlotHeight;
 
     final lastDrawBottom = playResY - settings.lyricsBottomMargin.toDouble();
     final double yLast = textMetrics.assCenterYForDrawBottom(
@@ -1901,7 +1935,8 @@ class AssExporter {
             startY - shift * (lineSpacing + avatarSlotHeight);
         var available = true;
         for (var rowIndex = 0; rowIndex < totalRows; rowIndex++) {
-          final candidateY = candidateStartY + rowIndex * lineSpacing;
+          final candidateY =
+              candidateStartY + rowIndex * (lineSpacing + avatarSlotHeight);
           final previousEnd = yEndTimes[candidateY.round()];
           if (previousEnd != null &&
               expectedDisplayStarts[rowIndex] < previousEnd) {
@@ -1989,7 +2024,7 @@ class AssExporter {
             '\\bord${_formatAssNumber(countdownOutlineWidth)}'
             '\\shad0\\blur0\\be0\\p1';
 
-        final nextSingerIndex = lineSingerMap[block.lines.first.astLine];
+        final nextSingerIndex = block.lines.first.rowLeadingSingerIndices.first;
         final nextSinger = nextSingerIndex != null
             ? settings.singerColors[nextSingerIndex]
             : null;
@@ -2118,9 +2153,10 @@ class AssExporter {
         displayStarts.add(displayStart);
         displayEnds.add(displayEnd);
         currentVisualRow++;
+        currentAvatarOffset += avatarSlotHeight;
       }
 
-      int? sIdx = lineSingerMap[lineData.astLine];
+      int? sIdx = lineData.rowLeadingSingerIndices.first;
       _writeLine(
         sb,
         lineData,
@@ -2134,94 +2170,95 @@ class AssExporter {
         textMetrics,
       );
 
-      final avatars = lineAvatars[lineData] ?? const [];
-      final inlinePlacements = _inlineSingerMarkerPlacements(
-        lineData: lineData,
-        startXs: startXs,
-        fontSize: fs,
-        spacing: _resolveSpacing(fs, settings.letterSpacingEm),
-        settings: settings,
-        textMetrics: textMetrics,
-      );
-      var avatarHeight = avatars.isEmpty
-          ? 0.0
-          : avatars
-                .map((avatar) => avatar.height)
-                .reduce((a, b) => a > b ? a : b);
-      for (final placement in inlinePlacements) {
-        final markerAvatars = _avatarsForSinger(
+      for (var rowIndex = 0; rowIndex < lineData.rows.length; rowIndex++) {
+        final avatars = _avatarsForSinger(
           settings,
-          placement.singerIndex,
+          lineData.rowLeadingSingerIndices[rowIndex],
           avatarDrawings,
         );
-        for (final avatar in markerAvatars) {
-          if (avatar.height > avatarHeight) avatarHeight = avatar.height;
-        }
-      }
-
-      if (avatarHeight > 0 && startXs.isNotEmpty && ys.isNotEmpty) {
-        final avatarTop = ys.last + fs * 0.8 + avatarVerticalGap;
-        _writeSingerAvatars(
-          sb: sb,
-          avatars: avatars,
-          left: startXs.reduce((a, b) => a < b ? a : b),
-          top: avatarTop,
-          gap: avatarHorizontalGap,
-          displayStart: displayStarts.first,
-          displayEnd: displayEnds.last,
+        final inlinePlacements = _inlineSingerMarkerPlacements(
+          row: lineData.rows[rowIndex],
+          startX: startXs[rowIndex],
+          fontSize: fs,
+          spacing: _resolveSpacing(fs, settings.letterSpacingEm),
+          settings: settings,
+          textMetrics: textMetrics,
         );
-        for (final placement in inlinePlacements) {
-          _writeSingerAvatars(
-            sb: sb,
-            avatars: _avatarsForSinger(
+        var hasAvatar = avatars.isNotEmpty;
+        if (!hasAvatar) {
+          for (final placement in inlinePlacements) {
+            if (_avatarsForSinger(
               settings,
               placement.singerIndex,
               avatarDrawings,
-            ),
-            left: placement.left,
+            ).isNotEmpty) {
+              hasAvatar = true;
+              break;
+            }
+          }
+        }
+
+        if (hasAvatar) {
+          final avatarTop = ys[rowIndex] + fs * 0.8 + avatarVerticalGap;
+          _writeSingerAvatars(
+            sb: sb,
+            avatars: avatars,
+            left: startXs[rowIndex],
             top: avatarTop,
             gap: avatarHorizontalGap,
-            displayStart: displayStarts.first,
-            displayEnd: displayEnds.last,
+            displayStart: displayStarts[rowIndex],
+            displayEnd: displayEnds[rowIndex],
           );
+          for (final placement in inlinePlacements) {
+            _writeSingerAvatars(
+              sb: sb,
+              avatars: _avatarsForSinger(
+                settings,
+                placement.singerIndex,
+                avatarDrawings,
+              ),
+              left: placement.left,
+              top: avatarTop,
+              gap: avatarHorizontalGap,
+              displayStart: displayStarts[rowIndex],
+              displayEnd: displayEnds[rowIndex],
+            );
+          }
         }
       }
-      currentAvatarOffset += avatarSlotHeight;
     }
   }
 
   static List<_InlineSingerMarkerPlacement> _inlineSingerMarkerPlacements({
-    required AssLineData lineData,
-    required List<double> startXs,
+    required List<LyricNode> row,
+    required double startX,
     required double fontSize,
     required double spacing,
     required AssExportSettings settings,
     required _AssTextMetrics textMetrics,
   }) {
     final result = <_InlineSingerMarkerPlacement>[];
-    for (var rowIndex = 0; rowIndex < lineData.rows.length; rowIndex++) {
-      var currentX = startXs[rowIndex];
-      for (final node in lineData.rows[rowIndex]) {
-        if (node is _SingerMarkerNode && !node.isLeading) {
-          result.add(
-            _InlineSingerMarkerPlacement(
-              singerIndex: node.singerIndex,
-              left: currentX,
-            ),
-          );
-        }
-        if (node is LyricText) {
-          currentX += _getCharWidth(node.text, fontSize, spacing, textMetrics);
-        } else if (node is LyricRuby) {
-          currentX += _getRubyNodeWidth(
-            node,
-            fontSize,
-            spacing,
-            settings.letterSpacingEm,
-            settings.rubyFontSize,
-            textMetrics,
-          );
-        }
+    var currentX = startX;
+    for (final node in row) {
+      if (node is _SingerMarkerNode && !node.isLeading) {
+        result.add(
+          _InlineSingerMarkerPlacement(
+            singerIndex: node.singerIndex,
+            left: currentX,
+          ),
+        );
+      }
+      if (node is LyricText) {
+        currentX += _getCharWidth(node.text, fontSize, spacing, textMetrics);
+      } else if (node is LyricRuby) {
+        currentX += _getRubyNodeWidth(
+          node,
+          fontSize,
+          spacing,
+          settings.letterSpacingEm,
+          settings.rubyFontSize,
+          textMetrics,
+        );
       }
     }
     return result;

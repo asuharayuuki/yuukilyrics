@@ -15,7 +15,12 @@ import '../services/font_service.dart';
 import '../services/font_library_service.dart';
 import '../services/color_preset_library_service.dart';
 import '../services/open_type_font.dart';
-import 'package:flutter/services.dart' show Clipboard, FontLoader;
+import 'package:flutter/services.dart'
+    show
+        Clipboard,
+        FilteringTextInputFormatter,
+        FontLoader,
+        LengthLimitingTextInputFormatter;
 import '../services/ffmpeg_service.dart';
 import '../services/singer_avatar_library_service.dart';
 import 'dart:math';
@@ -3708,7 +3713,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     final r = (color.r * 255).round().toRadixString(16).padLeft(2, '0');
     final g = (color.g * 255).round().toRadixString(16).padLeft(2, '0');
     final b = (color.b * 255).round().toRadixString(16).padLeft(2, '0');
-    return '#${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+    return '${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
   }
 
   Color? _tryParseHexColor(String input) {
@@ -3750,6 +3755,15 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
         }
       });
     }
+  }
+
+  Future<void> _showVisualColorPicker() async {
+    final selected = await showDialog<Color>(
+      context: context,
+      builder: (context) =>
+          _VisualColorPickerDialog(initialColor: _activeColor()),
+    );
+    if (selected != null && mounted) _onColorChanged(selected);
   }
 
   @override
@@ -3895,8 +3909,23 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: _hexController,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[0-9a-fA-F]'),
+                        ),
+                        LengthLimitingTextInputFormatter(6),
+                      ],
+                      textCapitalization: TextCapitalization.characters,
                       decoration: InputDecoration(
                         prefixIcon: const Icon(Icons.tag),
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: IconButton(
+                            onPressed: _showVisualColorPicker,
+                            icon: const Icon(Icons.palette_outlined),
+                            tooltip: context.l10n.chooseColor,
+                          ),
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -4068,4 +4097,232 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       ),
     );
   }
+}
+
+class _VisualColorPickerDialog extends StatefulWidget {
+  final Color initialColor;
+
+  const _VisualColorPickerDialog({required this.initialColor});
+
+  @override
+  State<_VisualColorPickerDialog> createState() =>
+      _VisualColorPickerDialogState();
+}
+
+class _VisualColorPickerDialogState extends State<_VisualColorPickerDialog> {
+  late HSVColor _hsvColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _hsvColor = HSVColor.fromColor(widget.initialColor);
+  }
+
+  void _updateHueSaturation(Offset position, double size) {
+    setState(() {
+      _hsvColor = _hsvColor.withHue(
+        (position.dx / size * 360).clamp(0.0, 360.0),
+      );
+      _hsvColor = _hsvColor.withSaturation(
+        (1 - position.dy / size).clamp(0.0, 1.0),
+      );
+    });
+  }
+
+  void _updateValue(Offset position, double width) {
+    setState(() {
+      _hsvColor = _hsvColor.withValue((position.dx / width).clamp(0.0, 1.0));
+    });
+  }
+
+  String _hexValue(Color color) {
+    final r = (color.r * 255).round().toRadixString(16).padLeft(2, '0');
+    final g = (color.g * 255).round().toRadixString(16).padLeft(2, '0');
+    final b = (color.b * 255).round().toRadixString(16).padLeft(2, '0');
+    return '${r.toUpperCase()}${g.toUpperCase()}${b.toUpperCase()}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dialogWidth = min(360.0, MediaQuery.sizeOf(context).width - 48);
+    final pickerSize = dialogWidth - 48;
+    final color = _hsvColor.toColor();
+
+    return Dialog(
+      child: SizedBox(
+        width: dialogWidth,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                context.l10n.chooseColor,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 20),
+              GestureDetector(
+                onTapDown: (details) =>
+                    _updateHueSaturation(details.localPosition, pickerSize),
+                onPanStart: (details) =>
+                    _updateHueSaturation(details.localPosition, pickerSize),
+                onPanUpdate: (details) =>
+                    _updateHueSaturation(details.localPosition, pickerSize),
+                child: CustomPaint(
+                  size: Size.square(pickerSize),
+                  painter: _HueSaturationPainter(_hsvColor),
+                ),
+              ),
+              const SizedBox(height: 18),
+              GestureDetector(
+                onTapDown: (details) =>
+                    _updateValue(details.localPosition, pickerSize),
+                onPanStart: (details) =>
+                    _updateValue(details.localPosition, pickerSize),
+                onPanUpdate: (details) =>
+                    _updateValue(details.localPosition, pickerSize),
+                child: CustomPaint(
+                  size: Size(pickerSize, 28),
+                  painter: _ValuePainter(_hsvColor),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '#${_hexValue(color)}',
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.l10n.cancel),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(color),
+                    child: Text(context.l10n.apply),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HueSaturationPainter extends CustomPainter {
+  final HSVColor color;
+
+  const _HueSaturationPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = const LinearGradient(
+          colors: [
+            Color(0xFFFF0000),
+            Color(0xFFFFFF00),
+            Color(0xFF00FF00),
+            Color(0xFF00FFFF),
+            Color(0xFF0000FF),
+            Color(0xFFFF00FF),
+            Color(0xFFFF0000),
+          ],
+        ).createShader(rect),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.white],
+        ).createShader(rect),
+    );
+
+    final marker = Offset(
+      color.hue / 360 * size.width,
+      (1 - color.saturation) * size.height,
+    );
+    canvas.drawCircle(marker, 8, Paint()..color = Colors.black54);
+    canvas.drawCircle(
+      marker,
+      6,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HueSaturationPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+class _ValuePainter extends CustomPainter {
+  final HSVColor color;
+
+  const _ValuePainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final fullValueColor = color.withValue(1).toColor();
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(6)),
+      Paint()
+        ..shader = LinearGradient(
+          colors: [Colors.black, fullValueColor],
+        ).createShader(rect),
+    );
+
+    final markerX = color.value * size.width;
+    final markerRect = Rect.fromCenter(
+      center: Offset(markerX, size.height / 2),
+      width: 6,
+      height: size.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(markerRect, const Radius.circular(3)),
+      Paint()..color = Colors.black54,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(markerRect.deflate(1), const Radius.circular(2)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ValuePainter oldDelegate) => oldDelegate.color != color;
 }
