@@ -614,45 +614,56 @@ class AssExporter {
 
     ui.Codec? sourceCodec;
     ui.Image? sourceImage;
-    int sourceWidth;
-    int sourceHeight;
     try {
       sourceCodec = await ui.instantiateImageCodec(bytes);
       final frame = await sourceCodec.getNextFrame();
       sourceImage = frame.image;
-      sourceWidth = sourceImage.width;
-      sourceHeight = sourceImage.height;
-    } finally {
-      sourceImage?.dispose();
-      sourceCodec?.dispose();
-    }
-    if (sourceWidth <= 0 || sourceHeight <= 0) return null;
+      final sourceWidth = sourceImage.width;
+      final sourceHeight = sourceImage.height;
+      if (sourceWidth <= 0 || sourceHeight <= 0) return null;
 
-    final sampleLongSide = min(requestedSize.round(), 72).clamp(1, 72).toInt();
-    final isWide = sourceWidth >= sourceHeight;
-    final sampleWidth = isWide
-        ? sampleLongSide
-        : max(1, (sampleLongSide * sourceWidth / sourceHeight).round());
-    final sampleHeight = isWide
-        ? max(1, (sampleLongSide * sourceHeight / sourceWidth).round())
-        : sampleLongSide;
+      // ASS cannot embed a bitmap. Keep one drawing cell per output pixel so
+      // small facial features survive conversion; a coarser pixel-art grid
+      // merges eyes, mouth, and hair lines at normal avatar sizes.
+      final sampleLongSide = min(
+        requestedSize.round(),
+        160,
+      ).clamp(24, 160).toInt();
+      final isWide = sourceWidth >= sourceHeight;
+      final sampleWidth = isWide
+          ? sampleLongSide
+          : max(1, (sampleLongSide * sourceWidth / sourceHeight).round());
+      final sampleHeight = isWide
+          ? max(1, (sampleLongSide * sourceHeight / sourceWidth).round())
+          : sampleLongSide;
 
-    ui.Codec? codec;
-    ui.Image? image;
-    try {
-      codec = await ui.instantiateImageCodec(
-        bytes,
-        targetWidth: sampleWidth,
-        targetHeight: sampleHeight,
+      // Use high-quality downsampling at the final 1:1 drawing density. Pure
+      // nearest-neighbour sampling preserves detail but makes diagonal hair
+      // lines and circular silhouettes look harsh; medium filtering smooths
+      // those contours without returning to the former low-resolution grid.
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawImageRect(
+        sourceImage,
+        Rect.fromLTWH(0, 0, sourceWidth.toDouble(), sourceHeight.toDouble()),
+        Rect.fromLTWH(0, 0, sampleWidth.toDouble(), sampleHeight.toDouble()),
+        Paint()..filterQuality = FilterQuality.medium,
       );
-      final frame = await codec.getNextFrame();
-      image = frame.image;
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(sampleWidth, sampleHeight);
+      picture.dispose();
       final rgba = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (rgba == null) return null;
+      if (rgba == null) {
+        image.dispose();
+        return null;
+      }
 
       final colorWeights = <int, int>{};
       for (var offset = 0; offset < rgba.lengthInBytes; offset += 4) {
         final alpha = rgba.getUint8(offset + 3);
+        // Discard only effectively invisible pixels. Partially covered edge
+        // pixels are retained below as a few alpha levels so circular avatars
+        // remain smooth on both light and dark video backgrounds.
         if (alpha < 16) continue;
         final rgb =
             (rgba.getUint8(offset) << 16) |
@@ -664,7 +675,9 @@ class AssExporter {
           ifAbsent: () => alpha,
         );
       }
-      final palette = _buildAvatarPalette(colorWeights, maxColors: 96);
+      // Preserve enough tones for facial features and fine line art. This is
+      // still bounded to keep the number of ASS dialogue layers manageable.
+      final palette = _buildAvatarPalette(colorWeights, maxColors: 128);
       final colorCache = <int, int>{};
       final pathsByColor = <int, StringBuffer>{};
       for (var y = 0; y < image.height; y++) {
@@ -719,16 +732,23 @@ class AssExporter {
       }
       layers.sort((a, b) => a.opacity.compareTo(b.opacity));
 
-      final drawingScale = requestedSize / max(image.width, image.height);
-      return _AssAvatarDrawing(
+      // Keep the ASS drawing scale integral. Fractional scaling would place
+      // cell boundaries between output pixels and make libass anti-alias them.
+      final drawingScale = max(
+        1,
+        (requestedSize / max(image.width, image.height)).round(),
+      ).toDouble();
+      final drawing = _AssAvatarDrawing(
         width: image.width * drawingScale,
         height: image.height * drawingScale,
         drawingScale: drawingScale,
         layers: layers,
       );
+      image.dispose();
+      return drawing;
     } finally {
-      image?.dispose();
-      codec?.dispose();
+      sourceImage?.dispose();
+      sourceCodec?.dispose();
     }
   }
 
@@ -858,9 +878,12 @@ class AssExporter {
       }
       return closest.rgb;
     });
-    final alphaStep = (alpha * 7 + 127) ~/ 255;
-    if (alphaStep == 0) return 0;
-    final quantizedAlpha = alphaStep * 255 ~/ 7;
+    // Keep the body opaque while retaining a small number of coverage levels
+    // for anti-aliased edges. Four levels are enough to smooth silhouettes
+    // without making the avatar itself look translucent.
+    final quantizedAlpha = alpha >= 224
+        ? 255
+        : ((alpha + 31) ~/ 64 * 64).clamp(64, 192);
     return (quantizedAlpha << 24) | targetRgb;
   }
 
