@@ -419,7 +419,7 @@ class AssExporter {
         sortedSingers: sortedSingers,
         showPrefixes: settings.showSingerPrefixesInAss,
       );
-      final renderLine = processed.line;
+      final renderLine = _mergeJoinedRubyChains(processed.line);
       renderLines.add(renderLine);
       currentSingerIdx = processed.trailingSingerIndex;
       if (processed.leadingSingerIndex != null) {
@@ -576,6 +576,52 @@ class AssExporter {
       leadingSingerIndex: leadingSingerIndex,
       trailingSingerIndex: currentSingerIndex,
     );
+  }
+
+  static LyricLine _mergeJoinedRubyChains(LyricLine sourceLine) {
+    final nodes = <LyricNode>[];
+    var index = 0;
+
+    while (index < sourceLine.nodes.length) {
+      final node = sourceLine.nodes[index];
+      if (node is! LyricRuby || !node.joinNext) {
+        nodes.add(node);
+        index++;
+        continue;
+      }
+
+      final chain = <LyricRuby>[node];
+      var nextIndex = index + 1;
+      while (chain.last.joinNext && nextIndex < sourceLine.nodes.length) {
+        final next = sourceLine.nodes[nextIndex];
+        if (next is! LyricRuby) break;
+        chain.add(next);
+        nextIndex++;
+      }
+
+      // An unterminated chain has no complete visual grouping. Preserve it as
+      // authored instead of silently consuming unrelated following nodes.
+      if (chain.length == 1 || chain.last.joinNext) {
+        nodes.add(node);
+        index++;
+        continue;
+      }
+
+      final rubyNodes = <LyricNode>[];
+      for (var chainIndex = 0; chainIndex < chain.length; chainIndex++) {
+        if (chainIndex > 0) rubyNodes.add(LyricText('＋'));
+        rubyNodes.addAll(chain[chainIndex].rubyNodes);
+      }
+      nodes.add(
+        LyricRuby(
+          baseText: chain.map((ruby) => ruby.baseText).join(),
+          rubyNodes: rubyNodes,
+        ),
+      );
+      index = nextIndex;
+    }
+
+    return LyricLine(nodes: nodes);
   }
 
   static double _resolveSingerAvatarSize(AssExportSettings settings) =>
