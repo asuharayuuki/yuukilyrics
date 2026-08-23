@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 
 import '../services/waveform_extractor.dart';
@@ -46,6 +48,9 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
   bool _isDragging = false;
   bool _wasPlayingBeforeDrag = false;
   bool _gestureChanged = false;
+  bool _isMousePointerDown = false;
+  int _gestureGeneration = 0;
+  Offset _gestureStartFocalPoint = Offset.zero;
   Offset _accumulatedGestureDelta = Offset.zero;
   double _appliedPanDx = 0;
 
@@ -89,11 +94,12 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
             }
             _wasShiftMode = isShiftMode;
 
-            return GestureDetector(
+            final gestureDetector = GestureDetector(
               onScaleStart: (details) {
                 _basePixelsPerSecond = _pixelsPerSecond;
-                _isDragging = true;
+                _isDragging = false;
                 _gestureChanged = false;
+                _gestureStartFocalPoint = details.focalPoint;
                 _accumulatedGestureDelta = Offset.zero;
                 _appliedPanDx = 0;
                 if (!isShiftMode) {
@@ -104,21 +110,30 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
                       .toDouble();
                 }
                 _wasPlayingBeforeDrag = widget.mediaPlayer.isPlaying;
-                if (_wasPlayingBeforeDrag) {
-                  widget.mediaPlayer.pause();
-                }
               },
               onScaleUpdate: (details) {
-                _accumulatedGestureDelta += details.focalPointDelta;
-                final isZooming = (details.scale - 1.0).abs() > 0.01;
+                _accumulatedGestureDelta =
+                    details.focalPoint - _gestureStartFocalPoint;
+                final isZooming =
+                    !_isMousePointerDown &&
+                    details.pointerCount >= 2 &&
+                    (details.scale - 1.0).abs() > 0.01;
+                var dragStarted = false;
                 if (!_gestureChanged &&
                     (isZooming ||
-                        _accumulatedGestureDelta.distance >= _dragThreshold)) {
+                        _accumulatedGestureDelta.dx.abs() >= _dragThreshold)) {
                   _gestureChanged = true;
+                  dragStarted = true;
+                  _gestureGeneration++;
                 }
                 if (!_gestureChanged) return;
 
+                if (dragStarted && _wasPlayingBeforeDrag) {
+                  widget.mediaPlayer.pause();
+                }
+
                 setState(() {
+                  _isDragging = true;
                   // Handle zoom
                   if (isZooming) {
                     _pixelsPerSecond = (_basePixelsPerSecond * details.scale)
@@ -144,25 +159,29 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
                   }
                 });
               },
-              onScaleEnd: (details) {
+              onScaleEnd: (details) async {
+                final gestureGeneration = _gestureGeneration;
+                // A click toggles playback, but must never seek.
+                if (!_gestureChanged) {
+                  await widget.mediaPlayer.togglePlayPause();
+                  return;
+                }
+
                 setState(() {
                   _isDragging = false;
                 });
-                if (!_gestureChanged) {
-                  if (!_wasPlayingBeforeDrag) {
-                    widget.mediaPlayer.play();
-                  }
-                  return;
-                }
-                widget.mediaPlayer.seek(
-                  Duration(milliseconds: _dragPositionMillis.toInt()),
+                final finalPosition = Duration(
+                  milliseconds: _dragPositionMillis.toInt(),
                 );
+                final shouldResume = _wasPlayingBeforeDrag || isShiftMode;
+                await widget.mediaPlayer.seek(finalPosition);
+                if (!mounted || gestureGeneration != _gestureGeneration) return;
                 if (isShiftMode) {
                   widget.lyricsState.setGlobalTimeShiftTargetTime(
-                    Duration(milliseconds: _dragPositionMillis.toInt()),
+                    finalPosition,
                   );
                 }
-                if (_wasPlayingBeforeDrag || isShiftMode) {
+                if (shouldResume) {
                   widget.mediaPlayer.play();
                 }
               },
@@ -227,6 +246,25 @@ class _TimelineWaveformState extends State<TimelineWaveform> {
                   ],
                 ),
               ),
+            );
+
+            return Listener(
+              onPointerDown: (event) {
+                if (event.kind == PointerDeviceKind.mouse) {
+                  _isMousePointerDown = true;
+                }
+              },
+              onPointerUp: (event) {
+                if (event.kind == PointerDeviceKind.mouse) {
+                  _isMousePointerDown = false;
+                }
+              },
+              onPointerCancel: (event) {
+                if (event.kind == PointerDeviceKind.mouse) {
+                  _isMousePointerDown = false;
+                }
+              },
+              child: gestureDetector,
             );
           },
         );

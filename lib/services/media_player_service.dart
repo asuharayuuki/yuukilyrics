@@ -14,6 +14,10 @@ class MediaPlayerService extends ChangeNotifier {
   final Stopwatch _interpolationStopwatch = Stopwatch();
   Duration _basePosition = Duration.zero;
   Timer? _ticker;
+  int _seekGeneration = 0;
+  Duration? _pendingNativeSeekPosition;
+  bool _latestSeekCommandCompleted = false;
+  bool _holdPositionAfterPause = false;
   
   final List<StreamSubscription> _subscriptions = [];
 
@@ -40,6 +44,19 @@ class MediaPlayerService extends ChangeNotifier {
     }
 
     _subscriptions.add(_player.stream.playing.listen((playing) {
+      if (playing) {
+        _holdPositionAfterPause = false;
+      }
+      if (playing == _isPlaying) return;
+
+      // Preserve the interpolated position before switching to the paused
+      // getter, then discard elapsed time before starting a new play period.
+      // Otherwise pausing falls back to the last native position update and
+      // resuming counts the previous play period's elapsed time again.
+      final currentPosition = position;
+      _interpolationStopwatch
+        ..stop()
+        ..reset();
       _isPlaying = playing;
       if (playing) {
         _interpolationStopwatch.start();
@@ -48,13 +65,33 @@ class MediaPlayerService extends ChangeNotifier {
           notifyListeners();
         });
       } else {
-        _interpolationStopwatch.stop();
+        _basePosition = currentPosition;
         _ticker?.cancel();
         notifyListeners();
       }
     }));
 
     _subscriptions.add(_player.stream.position.listen((pos) {
+      // media_kit emits playing=false before the native pause command has
+      // fully settled, so a trailing position event can otherwise move the
+      // paused timeline once more after it has visually stopped.
+      if (!_isPlaying && _holdPositionAfterPause) return;
+
+      final pendingSeekPosition = _pendingNativeSeekPosition;
+      if (pendingSeekPosition != null) {
+        final expectedPosition = _isPlaying ? position : pendingSeekPosition;
+        final distanceFromExpected =
+            (pos - expectedPosition).inMilliseconds.abs();
+
+        // Native position events do not identify which seek produced them.
+        // While dragging, reject events from older queued seeks until the
+        // latest command has completed and playback reaches its new target.
+        if (!_latestSeekCommandCompleted || distanceFromExpected > 250) {
+          return;
+        }
+        _pendingNativeSeekPosition = null;
+      }
+
       // Sync the base position and reset the stopwatch
       _basePosition = pos;
       if (_isPlaying) {
@@ -71,6 +108,10 @@ class MediaPlayerService extends ChangeNotifier {
   }
 
   Future<void> openMedia(String filePath) async {
+    _seekGeneration++;
+    _pendingNativeSeekPosition = null;
+    _latestSeekCommandCompleted = false;
+    _holdPositionAfterPause = false;
     String uriPath = filePath;
     if (!filePath.startsWith('http') && !filePath.startsWith('file://')) {
       uriPath = Uri.file(filePath).toString();
@@ -83,7 +124,13 @@ class MediaPlayerService extends ChangeNotifier {
   }
 
   Future<void> pause() async {
-    await _player.pause();
+    _holdPositionAfterPause = true;
+    try {
+      await _player.pause();
+    } catch (_) {
+      _holdPositionAfterPause = false;
+      rethrow;
+    }
   }
   
   Future<void> togglePlayPause() async {
@@ -95,10 +142,32 @@ class MediaPlayerService extends ChangeNotifier {
   }
 
   Future<void> seek(Duration position) async {
-      _basePosition = position;
-      _interpolationStopwatch.reset();
+    final seekGeneration = ++_seekGeneration;
+    _holdPositionAfterPause = false;
+    _pendingNativeSeekPosition = position;
+    _latestSeekCommandCompleted = false;
+    _basePosition = position;
+    _interpolationStopwatch.reset();
+    notifyListeners();
+
+    try {
       await _player.seek(position);
-      notifyListeners();
+    } catch (_) {
+      if (seekGeneration == _seekGeneration) {
+        _pendingNativeSeekPosition = null;
+        _latestSeekCommandCompleted = false;
+      }
+      rethrow;
+    }
+
+    // Dragging can enqueue many seeks. An older completion must not overwrite
+    // the final drag position, while the latest completion reasserts the exact
+    // target before playback is resumed.
+    if (seekGeneration != _seekGeneration) return;
+    _latestSeekCommandCompleted = true;
+    _basePosition = position;
+    _interpolationStopwatch.reset();
+    notifyListeners();
   }
 
   Future<void> setRate(double rate) async {
@@ -123,4 +192,3 @@ class MediaPlayerService extends ChangeNotifier {
     super.dispose();
   }
 }
-
