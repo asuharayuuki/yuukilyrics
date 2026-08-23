@@ -1,0 +1,108 @@
+name: Build Linux x64
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build-linux:
+    name: Build Linux x64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.0'
+
+      - name: Show build environment
+        run: |
+          flutter --version
+          clang --version
+          cmake --version
+          uname -m
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Linux x64
+        run: |
+          set -o pipefail
+          flutter build linux --release 2>&1 | tee build.log
+
+      - name: Extract version info
+        id: version
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          VERSION="${APP_VERSION%%+*}"
+          if [[ "$APP_VERSION" == *"+"* ]]; then
+            BUILD="${APP_VERSION#*+}"
+            ARTIFACT_VERSION="${VERSION}+${BUILD}"
+          else
+            BUILD=""
+            ARTIFACT_VERSION="$VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "artifact_version=$ARTIFACT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION, Build: ${BUILD:-none}"
+
+      - name: Prepare artifact
+        id: artifact
+        run: |
+          set -euo pipefail
+
+          RELEASE_DIR="build/linux/x64/release/bundle"
+          EXECUTABLE="$RELEASE_DIR/yuukilyrics"
+          if [[ ! -x "$EXECUTABLE" ]]; then
+            echo "ERROR: Linux executable not found at $EXECUTABLE"
+            exit 1
+          fi
+
+          case "$(uname -m)" in
+            x86_64) ARCH_LABEL="x64" ;;
+            aarch64|arm64) ARCH_LABEL="arm64" ;;
+            *)
+              echo "ERROR: Unsupported Linux architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p dist
+          ARTIFACT_VERSION="${{ steps.version.outputs.artifact_version }}"
+          ARTIFACT_PATH="$GITHUB_WORKSPACE/dist/yuukilyrics-${ARTIFACT_VERSION}-linux-${ARCH_LABEL}-release.tar.gz"
+          tar -C "$RELEASE_DIR" -czf "$ARTIFACT_PATH" .
+
+          echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+          file "$EXECUTABLE"
+          echo "Artifact prepared:"
+          ls -lh "$ARTIFACT_PATH"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: yuukilyrics-linux-x64
+          path: ${{ steps.artifact.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-logs-linux
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
