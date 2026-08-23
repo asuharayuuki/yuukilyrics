@@ -14,28 +14,35 @@ class MobileWaveformExtractor {
     int sampleRate,
     int samplesPerPixel,
   ) async {
+    File? outputFile;
     try {
       final Directory tempDir = await getTemporaryDirectory();
-      final String outputPath = '${tempDir.path}/temp_waveform.pcm';
-      final outputFile = File(outputPath);
-
-      if (await outputFile.exists()) {
-        await outputFile.delete();
-      }
+      final String outputPath =
+          '${tempDir.path}/yuukilyrics_waveform_${DateTime.now().microsecondsSinceEpoch}.pcm';
+      outputFile = File(outputPath);
 
       final session = await FFmpegKit.executeWithArguments([
         '-y',
-        '-i', mediaPath,
-        '-ac', '1',
-        '-ar', sampleRate.toString(),
-        '-f', 's16le',
-        '-acodec', 'pcm_s16le',
+        '-i',
+        mediaPath,
+        '-ac',
+        '1',
+        '-ar',
+        sampleRate.toString(),
+        '-f',
+        's16le',
+        '-acodec',
+        'pcm_s16le',
         outputPath,
       ]);
       final returnCode = await session.getReturnCode();
 
       if (returnCode != null && ReturnCode.isSuccess(returnCode)) {
-        return WaveformExtractor.parsePcmFile(outputFile, sampleRate, samplesPerPixel);
+        return await WaveformExtractor.parsePcmFile(
+          outputFile,
+          sampleRate,
+          samplesPerPixel,
+        );
       } else {
         debugPrint('Mobile FFmpeg extraction failed: $returnCode');
         return null;
@@ -43,6 +50,14 @@ class MobileWaveformExtractor {
     } catch (e) {
       debugPrint('Mobile waveform extraction error: $e');
       return null;
+    } finally {
+      if (outputFile != null && await outputFile.exists()) {
+        try {
+          await outputFile.delete();
+        } catch (e) {
+          debugPrint('Failed to delete temporary waveform file: $e');
+        }
+      }
     }
   }
 }

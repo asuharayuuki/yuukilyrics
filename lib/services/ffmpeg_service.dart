@@ -175,7 +175,7 @@ class FfmpegService {
       if (!await imageFile.exists()) {
         throw Exception('ASS プレビュー画像が生成されませんでした。');
       }
-      return imageFile.readAsBytes();
+      return await imageFile.readAsBytes();
     } finally {
       try {
         if (await assFile.exists()) await assFile.delete();

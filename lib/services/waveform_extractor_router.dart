@@ -13,7 +13,11 @@ class WaveformExtractorRouter {
   }) async {
     if (Platform.isAndroid || Platform.isIOS) {
       // Mobile: use bundled FFmpegKit
-      return MobileWaveformExtractor.extract(mediaPath, sampleRate, samplesPerPixel);
+      return MobileWaveformExtractor.extract(
+        mediaPath,
+        sampleRate,
+        samplesPerPixel,
+      );
     } else {
       // Desktop: use system ffmpeg
       return _extractWithSystemFfmpeg(mediaPath, sampleRate, samplesPerPixel);
@@ -26,31 +30,49 @@ class WaveformExtractorRouter {
     int samplesPerPixel,
   ) async {
     final Directory tempDir = await getTemporaryDirectory();
-    final String outputPath = '${tempDir.path}/temp_waveform.pcm';
+    final String outputPath =
+        '${tempDir.path}/yuukilyrics_waveform_${DateTime.now().microsecondsSinceEpoch}.pcm';
 
     final outputFile = File(outputPath);
-    if (await outputFile.exists()) await outputFile.delete();
+    try {
+      String ffmpegCommand = 'ffmpeg';
+      if (Platform.isWindows) {
+        ffmpegCommand = await FfmpegService().windowsFfmpegPath;
+      }
 
-    String ffmpegCommand = 'ffmpeg';
-    if (Platform.isWindows) {
-      ffmpegCommand = await FfmpegService().windowsFfmpegPath;
-    }
+      final result = await Process.run(ffmpegCommand, [
+        '-y',
+        '-i',
+        mediaPath,
+        '-ac',
+        '1',
+        '-ar',
+        sampleRate.toString(),
+        '-f',
+        's16le',
+        '-acodec',
+        'pcm_s16le',
+        outputPath,
+      ]);
 
-    final result = await Process.run(ffmpegCommand, [
-      '-y',
-      '-i', mediaPath,
-      '-ac', '1',
-      '-ar', sampleRate.toString(),
-      '-f', 's16le',
-      '-acodec', 'pcm_s16le',
-      outputPath,
-    ]);
-
-    if (result.exitCode == 0) {
-      return WaveformExtractor.parsePcmFile(outputFile, sampleRate, samplesPerPixel);
-    } else {
-      debugPrint('FFmpeg stderr: ${result.stderr}');
-      throw Exception('FFmpeg の処理に失敗しました：${result.stderr}');
+      if (result.exitCode == 0) {
+        return await WaveformExtractor.parsePcmFile(
+          outputFile,
+          sampleRate,
+          samplesPerPixel,
+        );
+      } else {
+        debugPrint('FFmpeg stderr: ${result.stderr}');
+        throw Exception('FFmpeg の処理に失敗しました：${result.stderr}');
+      }
+    } finally {
+      if (await outputFile.exists()) {
+        try {
+          await outputFile.delete();
+        } catch (e) {
+          debugPrint('Failed to delete temporary waveform file: $e');
+        }
+      }
     }
   }
 }
