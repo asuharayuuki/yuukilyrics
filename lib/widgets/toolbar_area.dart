@@ -63,6 +63,12 @@ class _ToolbarAreaState extends State<ToolbarArea> {
     });
   }
 
+  void _onRubyChanged(String value) {
+    final composing = _rubyCtrl.value.composing;
+    if (composing.isValid && !composing.isCollapsed) return;
+    widget.lyricsState.updateRubyText(value);
+  }
+
   void _onStateChanged() {
     final node = widget.lyricsState.getSelectedNode();
     bool nextShowRubyEditor = false;
@@ -494,9 +500,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                 border: InputBorder.none,
                 hintText: context.l10n.rubyInputHint,
               ),
-              onSubmitted: (_) {
-                widget.lyricsState.updateRubyText(_rubyCtrl.text);
-              },
+              onChanged: _onRubyChanged,
             ),
           ),
         ],

@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/color_preset_asset.dart';
 
 class ColorPresetLibraryService extends ChangeNotifier {
-  static const _header = <String>[
+  static const markdownHeader = <String>[
     'プリセット名',
     '歌唱済み文字色',
     '歌唱済み縁取り色',
@@ -216,7 +216,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
 
   bool _isHeader(List<String> fields) {
     final first = fields.first.replaceAll(RegExp(r'\s+'), '');
-    return first == 'プリセット名' || first == '预设名称';
+    return first == 'プリセット名' || first == '预设名称' || first == '預設名稱';
   }
 
   bool _isSeparator(List<String> fields) =>
@@ -224,8 +224,8 @@ class ColorPresetLibraryService extends ChangeNotifier {
 
   String _serialize(Iterable<ColorPresetAsset> presets) {
     final buffer = StringBuffer()
-      ..writeln('| ${_header.join(' | ')} |')
-      ..writeln('| ${List.filled(_header.length, '---').join(' | ')} |');
+      ..writeln('| ${markdownHeader.join(' | ')} |')
+      ..writeln('| ${List.filled(markdownHeader.length, '---').join(' | ')} |');
     for (final preset in presets) {
       buffer.writeln('| ${preset.toMarkdownFields().join(' | ')} |');
     }

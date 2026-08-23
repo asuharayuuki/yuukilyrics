@@ -558,6 +558,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get singerColorImport => '导入歌手配色';
 
   @override
+  String get importN3Project => '导入 N3 工程';
+
+  @override
+  String n3ColorImportLoaded(Object count) {
+    return '已读取 $count 个 N3 配色方案（已忽略描边 2 色）';
+  }
+
+  @override
+  String n3ColorImportFailed(Object error) {
+    return 'N3 工程读取失败：$error';
+  }
+
+  @override
   String singerColorImportCompleted(
     Object updated,
     Object added,

@@ -1087,7 +1087,26 @@ class AssExporter {
 
   static Color _colorAt(AssColorValue value, double position) {
     if (!value.isGradient) return value.color0;
-    return Color.lerp(value.color0, value.color100, position) ?? value.color0;
+    final stops = value.effectiveStops;
+    if (position <= stops.first.position) return stops.first.color;
+    if (value.isMillefeuille) {
+      var result = stops.first.color;
+      for (final stop in stops) {
+        if (stop.position > position) break;
+        result = stop.color;
+      }
+      return result;
+    }
+    for (var index = 1; index < stops.length; index++) {
+      final right = stops[index];
+      if (position > right.position) continue;
+      final left = stops[index - 1];
+      final width = right.position - left.position;
+      if (width <= 0) return right.color;
+      final amount = ((position - left.position) / width).clamp(0.0, 1.0);
+      return Color.lerp(left.color, right.color, amount) ?? left.color;
+    }
+    return stops.last.color;
   }
 
   static String _assColorAt(AssColorValue value, double position) {
@@ -1100,24 +1119,32 @@ class AssExporter {
     required double gradientTop,
     required double gradientBottom,
     required bool enabled,
+    bool smooth = true,
+    Iterable<double> breakpoints = const [],
   }) {
     if (!enabled || gradientBottom <= gradientTop) {
       return [_GradientBand(top: clipTop, bottom: clipBottom, position: 0.5)];
     }
 
-    const bandCount = 16;
+    const bandCount = 24;
     final height = gradientBottom - gradientTop;
-    return List.generate(bandCount, (index) {
-      final top = index == 0
-          ? clipTop
-          : gradientTop + height * index / bandCount;
-      final bottom = index == bandCount - 1
+    final boundaries = <double>{
+      if (smooth)
+        for (var index = 0; index <= bandCount; index++) index / bandCount
+      else ...{0.0, 1.0},
+      ...breakpoints.map((value) => value.clamp(0.0, 1.0)),
+    }.toList()..sort();
+    return List.generate(boundaries.length - 1, (index) {
+      final start = boundaries[index];
+      final end = boundaries[index + 1];
+      final top = index == 0 ? clipTop : gradientTop + height * start;
+      final bottom = index == boundaries.length - 2
           ? clipBottom
-          : gradientTop + height * (index + 1) / bandCount;
+          : gradientTop + height * end;
       return _GradientBand(
         top: top,
         bottom: bottom,
-        position: index / (bandCount - 1),
+        position: (start + end) / 2,
       );
     });
   }
@@ -1150,6 +1177,8 @@ class AssExporter {
       gradientTop: visualY - fontSize * 0.5,
       gradientBottom: visualY + fontSize * 0.5,
       enabled: hasGradient,
+      smooth: color.mode == AssColorMode.gradient,
+      breakpoints: color.effectiveStops.map((stop) => stop.position),
     );
     final numLayers = blurLevel + 1;
 
@@ -1242,6 +1271,13 @@ class AssExporter {
       gradientTop: visualY - fontSize * 0.5,
       gradientBottom: visualY + fontSize * 0.5,
       enabled: hasGradient,
+      smooth:
+          textColor.mode == AssColorMode.gradient ||
+          outlineColor.mode == AssColorMode.gradient,
+      breakpoints: {
+        ...textColor.effectiveStops.map((stop) => stop.position),
+        ...outlineColor.effectiveStops.map((stop) => stop.position),
+      },
     );
 
     for (final band in bands) {
@@ -3218,6 +3254,13 @@ class AssExporter {
       gradientTop: y - fs * 0.5,
       gradientBottom: y + fs * 0.5,
       enabled: textColor.isGradient || outlineColor.isGradient,
+      smooth:
+          textColor.mode == AssColorMode.gradient ||
+          outlineColor.mode == AssColorMode.gradient,
+      breakpoints: {
+        ...textColor.effectiveStops.map((stop) => stop.position),
+        ...outlineColor.effectiveStops.map((stop) => stop.position),
+      },
     );
 
     for (final band in bands) {

@@ -15,6 +15,8 @@ import '../services/font_service.dart';
 import '../services/font_library_service.dart';
 import '../services/color_preset_library_service.dart';
 import '../services/open_type_font.dart';
+import '../services/n3_color_import_service.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart'
     show
         Clipboard,
@@ -85,7 +87,15 @@ const List<AssLineAlignment> kDefaultFourLineAlignments = [
   AssLineAlignment.right,
 ];
 
-enum AssColorMode { solid, gradient }
+enum AssColorMode { solid, gradient, millefeuille }
+
+@immutable
+class AssColorStop {
+  final double position;
+  final Color color;
+
+  const AssColorStop({required this.position, required this.color});
+}
 
 enum SingerColorPreset {
   none,
@@ -106,16 +116,54 @@ class AssColorValue {
   final AssColorMode mode;
   final Color color0;
   final Color color100;
+  final List<AssColorStop> stops;
 
   const AssColorValue.solid(Color color)
     : mode = AssColorMode.solid,
       color0 = color,
-      color100 = color;
+      color100 = color,
+      stops = const [];
 
   const AssColorValue.gradient({required this.color0, required this.color100})
-    : mode = AssColorMode.gradient;
+    : mode = AssColorMode.gradient,
+      stops = const [];
 
-  bool get isGradient => mode == AssColorMode.gradient;
+  AssColorValue.withStops({
+    required this.mode,
+    required List<AssColorStop> stops,
+  }) : assert(mode != AssColorMode.solid),
+       stops = List.unmodifiable(_normalizeAssStops(stops)),
+       color0 = _normalizeAssStops(stops).first.color,
+       color100 = _normalizeAssStops(stops).last.color;
+
+  bool get isGradient => mode != AssColorMode.solid;
+  bool get isMillefeuille => mode == AssColorMode.millefeuille;
+
+  List<AssColorStop> get effectiveStops => stops.isNotEmpty
+      ? stops
+      : [
+          AssColorStop(position: 0, color: color0),
+          AssColorStop(position: 1, color: color100),
+        ];
+}
+
+List<AssColorStop> _normalizeAssStops(Iterable<AssColorStop> source) {
+  final indexed = source.indexed.toList()
+    ..sort((a, b) {
+      final result = a.$2.position.compareTo(b.$2.position);
+      return result != 0 ? result : a.$1.compareTo(b.$1);
+    });
+  if (indexed.isEmpty) {
+    throw ArgumentError('At least one color stop is required.');
+  }
+  return indexed
+      .map(
+        (entry) => AssColorStop(
+          position: entry.$2.position.clamp(0.0, 1.0),
+          color: entry.$2.color,
+        ),
+      )
+      .toList(growable: false);
 }
 
 class SingerColorInfo {
@@ -275,6 +323,7 @@ bool _isSingerColorImportHeader(List<String> fields) {
       first == '歌手名' ||
       first == 'プリセット名' ||
       first == '预设名称' ||
+      first == '預設名稱' ||
       first == 'singer';
 }
 
@@ -287,19 +336,19 @@ bool _isMarkdownSeparatorRow(List<String> fields) {
 }
 
 AssColorValue? _tryParseSingerColorValue(String source) {
-  final value = source.trim();
-  final match = RegExp(
-    r'^#([0-9a-fA-F]{6})(?:/#([0-9a-fA-F]{6}))?$',
-  ).firstMatch(value);
-  if (match == null) return null;
-
-  Color parseColor(String hex) => Color(0xFF000000 | int.parse(hex, radix: 16));
-  final topColor = parseColor(match.group(1)!);
-  final bottomHex = match.group(2);
-  if (bottomHex == null) return AssColorValue.solid(topColor);
-  return AssColorValue.gradient(
-    color0: topColor,
-    color100: parseColor(bottomHex),
+  final parsed = ColorPresetValue.tryParse(source);
+  if (parsed == null) return null;
+  if (!parsed.isGradient) return AssColorValue.solid(Color(parsed.color0));
+  return AssColorValue.withStops(
+    mode: parsed.isMillefeuille
+        ? AssColorMode.millefeuille
+        : AssColorMode.gradient,
+    stops: parsed.stops
+        .map(
+          (stop) =>
+              AssColorStop(position: stop.position, color: Color(stop.color)),
+        )
+        .toList(growable: false),
   );
 }
 
@@ -1415,14 +1464,16 @@ class _AssExportScreenState extends State<AssExportScreen> {
     }
     if (!mounted) return;
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => SavedColorPresetsDialog(
-        library: widget.colorPresetLibrary,
-        onAdd: _addSavedColorPresetToCurrent,
-        onRename: _renameSavedColorPreset,
-        onDelete: _deleteSavedColorPreset,
-        onImport: _showSingerColorImportDialog,
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => SavedColorPresetsScreen(
+          library: widget.colorPresetLibrary,
+          onAdd: _addSavedColorPresetToCurrent,
+          onEdit: _editSavedColorPreset,
+          onRename: _renameSavedColorPreset,
+          onDelete: _deleteSavedColorPreset,
+          onImport: _showSavedColorPresetImportDialog,
+        ),
       ),
     );
   }
@@ -1483,17 +1534,57 @@ class _AssExportScreenState extends State<AssExportScreen> {
     );
   }
 
-  Future<void> _renameSavedColorPreset(ColorPresetAsset preset) async {
-    final name = await _showColorPresetNameDialog(
-      title: context.l10n.renameColorPreset,
-      initialName: preset.name,
-    );
-    if (name == null || name == preset.name || !mounted) return;
+  Future<bool> _renameSavedColorPreset(
+    ColorPresetAsset preset,
+    String newName,
+  ) async {
+    final name = newName.trim();
+    if (name == preset.name) return true;
+    final validation = widget.colorPresetLibrary.validateName(name);
+    if (validation != null) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            validation == 'empty'
+                ? context.l10n.colorPresetNameRequired
+                : context.l10n.colorPresetNameInvalid,
+          ),
+        ),
+      );
+      return false;
+    }
     try {
       await widget.colorPresetLibrary.rename(preset, name);
-      if (!mounted) return;
+      if (!mounted) return true;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.colorPresetRenamed(name))),
+      );
+      return true;
+    } catch (error) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.operationFailed(error))),
+      );
+      return false;
+    }
+  }
+
+  Future<void> _editSavedColorPreset(ColorPresetAsset preset) async {
+    final result = await _showColorSettingsDialog(
+      edited: _singerFromColorPreset(preset),
+      title: context.l10n.singerColorsTitle(preset.name),
+      fillPrefixFromPreset: false,
+      allowSavePreset: false,
+    );
+    if (result == null || !mounted) return;
+    try {
+      final saved = await widget.colorPresetLibrary.save(
+        _colorPresetFromSinger(preset.name, result),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.colorPresetSaved(saved.name))),
       );
     } catch (error) {
       if (!mounted) return;
@@ -1538,7 +1629,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
     }
   }
 
-  Future<void> _showSingerColorImportDialog() async {
+  Future<void> _showSavedColorPresetImportDialog() async {
     final savedMarkdown = await widget.colorPresetLibrary.readMarkdown();
     if (!mounted) return;
     final result = await showDialog<_SingerColorImportParseResult>(
@@ -1551,12 +1642,26 @@ class _AssExportScreenState extends State<AssExportScreen> {
     );
     if (result == null || !mounted) return;
 
+    final existingNames = widget.colorPresetLibrary.presets
+        .map((preset) => preset.name.trim().toLowerCase())
+        .toSet();
+    var updatedCount = 0;
+    var addedCount = 0;
+    final presets = result.singers
+        .map((singer) {
+          final name = singer.prefix.trim();
+          if (existingNames.contains(name.toLowerCase())) {
+            updatedCount++;
+          } else {
+            addedCount++;
+            existingNames.add(name.toLowerCase());
+          }
+          return _colorPresetFromSinger(name, singer);
+        })
+        .toList(growable: false);
+
     try {
-      await widget.colorPresetLibrary.saveAll(
-        result.singers.map(
-          (singer) => _colorPresetFromSinger(singer.prefix, singer),
-        ),
-      );
+      await widget.colorPresetLibrary.saveAll(presets);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1565,33 +1670,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
       return;
     }
     if (!mounted) return;
-
-    var updatedCount = 0;
-    var addedCount = 0;
-    setState(() {
-      for (final imported in result.singers) {
-        final matchingIndexes = <int>[];
-        for (var index = 0; index < _singerColors.length; index++) {
-          if (_singerColors[index].prefix.trim() == imported.prefix) {
-            matchingIndexes.add(index);
-          }
-        }
-
-        if (matchingIndexes.isEmpty) {
-          _singerColors.add(imported);
-          _singerControllers.add(TextEditingController(text: imported.prefix));
-          addedCount++;
-          continue;
-        }
-
-        for (final index in matchingIndexes) {
-          _singerColors[index] = imported.copy();
-          _singerControllers[index].text = imported.prefix;
-        }
-        updatedCount++;
-      }
-    });
-    _publishActiveColorPresets();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1643,21 +1721,35 @@ class _AssExportScreenState extends State<AssExportScreen> {
   }
 
   ColorPresetValue _toPresetValue(AssColorValue value) {
-    return value.isGradient
-        ? ColorPresetValue.gradient(
-            color0: value.color0.toARGB32(),
-            color100: value.color100.toARGB32(),
-          )
-        : ColorPresetValue.solid(value.color0.toARGB32());
+    if (!value.isGradient) {
+      return ColorPresetValue.solid(value.color0.toARGB32());
+    }
+    return ColorPresetValue.withStops(
+      mode: value.isMillefeuille
+          ? ColorFillMode.millefeuille
+          : ColorFillMode.gradient,
+      stops: value.effectiveStops.map(
+        (stop) => ColorPresetStop(
+          position: stop.position,
+          color: stop.color.toARGB32(),
+        ),
+      ),
+    );
   }
 
   AssColorValue _fromPresetValue(ColorPresetValue value) {
-    return value.isGradient
-        ? AssColorValue.gradient(
-            color0: Color(value.color0),
-            color100: Color(value.color100),
+    if (!value.isGradient) return AssColorValue.solid(Color(value.color0));
+    return AssColorValue.withStops(
+      mode: value.isMillefeuille
+          ? AssColorMode.millefeuille
+          : AssColorMode.gradient,
+      stops: value.stops
+          .map(
+            (stop) =>
+                AssColorStop(position: stop.position, color: Color(stop.color)),
           )
-        : AssColorValue.solid(Color(value.color0));
+          .toList(growable: false),
+    );
   }
 
   SingerColorInfo _singerFromColorPreset(ColorPresetAsset preset) {
@@ -1818,6 +1910,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
     required SingerColorInfo edited,
     required String title,
     required bool fillPrefixFromPreset,
+    bool allowSavePreset = true,
   }) {
     return showDialog<SingerColorInfo>(
       context: context,
@@ -1991,17 +2084,21 @@ class _AssExportScreenState extends State<AssExportScreen> {
               ),
               actionsAlignment: MainAxisAlignment.spaceBetween,
               actions: [
-                IconButton(
-                  tooltip: context.l10n.saveColorPreset,
-                  onPressed: () async {
-                    final preset = await _saveCurrentColorPreset(edited);
-                    if (preset == null || !ctx.mounted) return;
-                    if (fillPrefixFromPreset && edited.prefix.trim().isEmpty) {
-                      setDialogState(() => edited.prefix = preset.name);
-                    }
-                  },
-                  icon: const Icon(Icons.save_outlined),
-                ),
+                if (allowSavePreset)
+                  IconButton(
+                    tooltip: context.l10n.saveColorPreset,
+                    onPressed: () async {
+                      final preset = await _saveCurrentColorPreset(edited);
+                      if (preset == null || !ctx.mounted) return;
+                      if (fillPrefixFromPreset &&
+                          edited.prefix.trim().isEmpty) {
+                        setDialogState(() => edited.prefix = preset.name);
+                      }
+                    },
+                    icon: const Icon(Icons.save_outlined),
+                  )
+                else
+                  const SizedBox.shrink(),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -2667,6 +2764,52 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
     );
   }
 
+  Future<void> _loadN3Project() async {
+    try {
+      final picked = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['n3proj'],
+        withData: true,
+      );
+      if (picked == null || !mounted) return;
+      final file = picked.files.single;
+      final bytes =
+          file.bytes ??
+          (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) {
+        throw const FileSystemException('Unable to read the selected file.');
+      }
+      final presets = N3ColorImportService().importBytes(bytes);
+      if (!mounted) return;
+      const header = ColorPresetLibraryService.markdownHeader;
+      final rows = presets.map((preset) {
+        final fields = preset.toMarkdownFields();
+        fields[0] = fields[0]
+            .replaceAll('|', '｜')
+            .replaceAll(RegExp(r'[\r\n]+'), ' ');
+        return '| ${fields.join(' | ')} |';
+      });
+      _textController.text = [
+        '| ${header.join(' | ')} |',
+        '| ${List.filled(header.length, '---').join(' | ')} |',
+        ...rows,
+      ].join('\n');
+      _textController.selection = TextSelection.collapsed(
+        offset: _textController.text.length,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.n3ColorImportLoaded(presets.length)),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.n3ColorImportFailed(error))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -2700,12 +2843,19 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   OutlinedButton.icon(
                     onPressed: _pasteText,
                     icon: const Icon(Icons.content_paste, size: 18),
                     label: Text(context.l10n.paste),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _loadN3Project,
+                    icon: const Icon(Icons.folder_open, size: 18),
+                    label: Text(context.l10n.importN3Project),
                   ),
                 ],
               ),
@@ -3738,6 +3888,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
   late Color _color0;
   late Color _color100;
   int _activeEndpoint = 0;
+  late List<AssColorStop> _stops;
   late TextEditingController _hexController;
 
   @override
@@ -3746,6 +3897,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     _mode = widget.initialValue.mode;
     _color0 = widget.initialValue.color0;
     _color100 = widget.initialValue.color100;
+    _stops = widget.initialValue.effectiveStops.toList();
     _hexController = TextEditingController(text: _colorToHex(_activeColor()));
   }
 
@@ -3758,7 +3910,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
   Color _activeColor() {
     return _mode == AssColorMode.solid
         ? _color0
-        : (_activeEndpoint == 0 ? _color0 : _color100);
+        : _stops[_activeEndpoint].color;
   }
 
   String _colorToHex(Color color) {
@@ -3781,11 +3933,11 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
         _color0 = color;
         _color100 = color;
       } else {
-        if (_activeEndpoint == 0) {
-          _color0 = color;
-        } else {
-          _color100 = color;
-        }
+        _stops[_activeEndpoint] = AssColorStop(
+          position: _stops[_activeEndpoint].position,
+          color: color,
+        );
+        _syncEndpointColors();
       }
       _hexController.text = _colorToHex(color);
     });
@@ -3799,11 +3951,11 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           _color0 = parsed;
           _color100 = parsed;
         } else {
-          if (_activeEndpoint == 0) {
-            _color0 = parsed;
-          } else {
-            _color100 = parsed;
-          }
+          _stops[_activeEndpoint] = AssColorStop(
+            position: _stops[_activeEndpoint].position,
+            color: parsed,
+          );
+          _syncEndpointColors();
         }
       });
     }
@@ -3816,6 +3968,62 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           _VisualColorPickerDialog(initialColor: _activeColor()),
     );
     if (selected != null && mounted) _onColorChanged(selected);
+  }
+
+  void _syncEndpointColors() {
+    _stops.sort((a, b) => a.position.compareTo(b.position));
+    _color0 = _stops.first.color;
+    _color100 = _stops.last.color;
+  }
+
+  void _addStop() {
+    final selected = _stops[_activeEndpoint];
+    final nextPosition = _activeEndpoint + 1 < _stops.length
+        ? _stops[_activeEndpoint + 1].position
+        : 1.0;
+    final position = (selected.position + nextPosition) / 2;
+    setState(() {
+      _stops.add(AssColorStop(position: position, color: selected.color));
+      _stops.sort((a, b) => a.position.compareTo(b.position));
+      _activeEndpoint = _stops.indexWhere((stop) => stop.position == position);
+      _syncEndpointColors();
+      _hexController.text = _colorToHex(_activeColor());
+    });
+  }
+
+  void _removeActiveStop() {
+    if (_stops.length <= 2) return;
+    setState(() {
+      _stops.removeAt(_activeEndpoint);
+      _activeEndpoint = _activeEndpoint.clamp(0, _stops.length - 1);
+      _syncEndpointColors();
+      _hexController.text = _colorToHex(_activeColor());
+    });
+  }
+
+  LinearGradient _previewGradient() {
+    if (_mode == AssColorMode.gradient) {
+      return LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: _stops.map((stop) => stop.color).toList(),
+        stops: _stops.map((stop) => stop.position).toList(),
+      );
+    }
+    final colors = <Color>[];
+    final positions = <double>[];
+    for (var index = 0; index < _stops.length; index++) {
+      final start = _stops[index].position;
+      final end = index + 1 < _stops.length ? _stops[index + 1].position : 1.0;
+      colors.addAll([_stops[index].color, _stops[index].color]);
+      positions.addAll([start, end]);
+    }
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: colors,
+      stops: positions,
+    );
   }
 
   @override
@@ -3856,14 +4064,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                 height: 90,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  color: _mode == AssColorMode.gradient ? null : _color0,
-                  gradient: _mode == AssColorMode.gradient
-                      ? LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [_color0, _color100],
-                        )
-                      : null,
+                  color: _mode == AssColorMode.solid ? _color0 : null,
+                  gradient: _mode == AssColorMode.solid
+                      ? null
+                      : _previewGradient(),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.15),
@@ -3894,14 +4098,35 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                     value: AssColorMode.gradient,
                     label: Text(context.l10n.gradient),
                   ),
+                  const ButtonSegment(
+                    value: AssColorMode.millefeuille,
+                    label: Text('ミルフィーユ'),
+                  ),
                 ],
                 selected: {_mode},
                 onSelectionChanged: (selection) {
                   setState(() {
+                    final previousMode = _mode;
                     _mode = selection.first;
                     if (_mode == AssColorMode.solid) {
                       _color100 = _color0;
                       _activeEndpoint = 0;
+                    } else if (_stops.length < 2) {
+                      _stops = [
+                        AssColorStop(position: 0, color: _color0),
+                        AssColorStop(position: 1, color: _color100),
+                      ];
+                    }
+                    if (_mode == AssColorMode.millefeuille &&
+                        previousMode != AssColorMode.millefeuille &&
+                        _stops.length == 2 &&
+                        _stops.first.position == 0 &&
+                        _stops.last.position == 1) {
+                      _stops[1] = AssColorStop(
+                        position: 0.5,
+                        color: _stops[1].color,
+                      );
+                      _syncEndpointColors();
                     }
                     _hexController.text = _colorToHex(_activeColor());
                   });
@@ -3909,42 +4134,76 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            if (_mode == AssColorMode.gradient)
+            if (_mode != AssColorMode.solid)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: _buildEndpointTab(
-                        title: context.l10n.gradientTop,
-                        color: _color0,
-                        isActive: _activeEndpoint == 0,
-                        onTap: () {
-                          setState(() {
-                            _activeEndpoint = 0;
-                            _hexController.text = _colorToHex(_color0);
-                          });
-                        },
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            value: _stops[_activeEndpoint].position,
+                            onChanged: (value) => setState(() {
+                              final active = _stops[_activeEndpoint];
+                              final updated = AssColorStop(
+                                position: value,
+                                color: active.color,
+                              );
+                              _stops[_activeEndpoint] = updated;
+                              _syncEndpointColors();
+                              _activeEndpoint = _stops.indexOf(updated);
+                            }),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 54,
+                          child: Text(
+                            '${(_stops[_activeEndpoint].position * 100).round()}%',
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildEndpointTab(
-                        title: context.l10n.gradientBottom,
-                        color: _color100,
-                        isActive: _activeEndpoint == 1,
-                        onTap: () {
-                          setState(() {
-                            _activeEndpoint = 1;
-                            _hexController.text = _colorToHex(_color100);
-                          });
+                    SizedBox(
+                      height: 68,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _stops.length + 2,
+                        separatorBuilder: (_, _) => const SizedBox(width: 6),
+                        itemBuilder: (context, index) {
+                          if (index < _stops.length) {
+                            final stop = _stops[index];
+                            return _buildCompactStop(
+                              position: stop.position,
+                              color: stop.color,
+                              isActive: _activeEndpoint == index,
+                              onTap: () => setState(() {
+                                _activeEndpoint = index;
+                                _hexController.text = _colorToHex(
+                                  _activeColor(),
+                                );
+                              }),
+                            );
+                          }
+                          if (index == _stops.length) {
+                            return _buildStopAction(
+                              icon: Icons.add,
+                              onPressed: _addStop,
+                            );
+                          }
+                          return _buildStopAction(
+                            icon: Icons.remove,
+                            onPressed: _stops.length > 2
+                                ? _removeActiveStop
+                                : null,
+                          );
                         },
                       ),
                     ),
                   ],
                 ),
               ),
-            if (_mode == AssColorMode.gradient) const SizedBox(height: 20),
+            if (_mode != AssColorMode.solid) const SizedBox(height: 20),
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -4034,9 +4293,9 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                       Navigator.of(context).pop(
                         _mode == AssColorMode.solid
                             ? AssColorValue.solid(_color0)
-                            : AssColorValue.gradient(
-                                color0: _color0,
-                                color100: _color100,
+                            : AssColorValue.withStops(
+                                mode: _mode,
+                                stops: _stops,
                               ),
                       );
                     },
@@ -4057,60 +4316,65 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     );
   }
 
-  Widget _buildEndpointTab({
-    required String title,
+  Widget _buildCompactStop({
+    required double position,
     required Color color,
     required bool isActive,
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        duration: const Duration(milliseconds: 150),
+        width: 48,
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: isActive
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.3,
-                ),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(10),
+          color: isActive ? theme.colorScheme.primaryContainer : null,
           border: Border.all(
             color: isActive ? theme.colorScheme.primary : Colors.transparent,
             width: 2,
           ),
         ),
-        child: Row(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 24,
-              height: 24,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 color: color,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white24),
-                boxShadow: [
-                  if (isActive)
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.5),
-                      blurRadius: 8,
-                    ),
-                ],
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: Colors.white54),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                  color: isActive ? theme.colorScheme.onPrimaryContainer : null,
-                ),
+            const SizedBox(height: 2),
+            Text(
+              '${(position * 100).round()}%',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                color: isActive ? theme.colorScheme.onPrimaryContainer : null,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStopAction({
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) {
+    return SizedBox(
+      width: 42,
+      child: IconButton.filledTonal(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
       ),
     );
   }
@@ -4122,12 +4386,12 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
         duration: const Duration(milliseconds: 200),
         width: 48,
         height: 48,
+        padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          color: color,
           shape: BoxShape.circle,
           border: Border.all(
-            color: isActive ? Colors.white : Colors.white24,
-            width: isActive ? 3 : 1,
+            color: isActive ? Colors.white : Colors.transparent,
+            width: 2,
           ),
           boxShadow: [
             if (isActive)
@@ -4138,14 +4402,21 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
               ),
           ],
         ),
-        child: isActive
-            ? Icon(
-                Icons.check,
-                color: color.computeLuminance() > 0.5
-                    ? Colors.black87
-                    : Colors.white,
-              )
-            : null,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white24),
+          ),
+          child: isActive
+              ? Icon(
+                  Icons.check,
+                  color: color.computeLuminance() > 0.5
+                      ? Colors.black87
+                      : Colors.white,
+                )
+              : null,
+        ),
       ),
     );
   }

@@ -34,6 +34,7 @@ RhythmicaLyrics_v63-1_SOURCE/
 /build/
 /coverage/
 /test/*
+!/test/*_test.dart
 
 # Symbolication related
 app.*.symbols

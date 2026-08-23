@@ -558,6 +558,19 @@ class AppLocalizationsJa extends AppLocalizations {
   String get singerColorImport => '歌手配色インポート';
 
   @override
+  String get importN3Project => 'N3 プロジェクトを読み込む';
+
+  @override
+  String n3ColorImportLoaded(Object count) {
+    return 'N3 配色 $count 件を読み込みました（縁取り 2 色は除外）';
+  }
+
+  @override
+  String n3ColorImportFailed(Object error) {
+    return 'N3 プロジェクトの読み込みに失敗しました：$error';
+  }
+
+  @override
   String singerColorImportCompleted(
     Object updated,
     Object added,

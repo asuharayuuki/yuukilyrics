@@ -1056,6 +1056,24 @@ abstract class AppLocalizations {
   /// **'歌手配色インポート'**
   String get singerColorImport;
 
+  /// No description provided for @importN3Project.
+  ///
+  /// In ja, this message translates to:
+  /// **'N3 プロジェクトを読み込む'**
+  String get importN3Project;
+
+  /// No description provided for @n3ColorImportLoaded.
+  ///
+  /// In ja, this message translates to:
+  /// **'N3 配色 {count} 件を読み込みました（縁取り 2 色は除外）'**
+  String n3ColorImportLoaded(Object count);
+
+  /// No description provided for @n3ColorImportFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'N3 プロジェクトの読み込みに失敗しました：{error}'**
+  String n3ColorImportFailed(Object error);
+
   /// No description provided for @singerColorImportCompleted.
   ///
   /// In ja, this message translates to:

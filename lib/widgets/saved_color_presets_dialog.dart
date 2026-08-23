@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
@@ -8,13 +5,12 @@ import '../models/color_preset_asset.dart';
 import '../services/color_preset_library_service.dart';
 import 'dual_color_preview.dart';
 
-enum _SavedColorPresetAction { rename, delete }
-
-class SavedColorPresetsDialog extends StatelessWidget {
-  const SavedColorPresetsDialog({
+class SavedColorPresetsScreen extends StatelessWidget {
+  const SavedColorPresetsScreen({
     super.key,
     required this.library,
     required this.onAdd,
+    required this.onEdit,
     required this.onRename,
     required this.onDelete,
     required this.onImport,
@@ -22,7 +18,8 @@ class SavedColorPresetsDialog extends StatelessWidget {
 
   final ColorPresetLibraryService library;
   final Future<void> Function(ColorPresetAsset preset) onAdd;
-  final Future<void> Function(ColorPresetAsset preset) onRename;
+  final Future<void> Function(ColorPresetAsset preset) onEdit;
+  final Future<bool> Function(ColorPresetAsset preset, String newName) onRename;
   final Future<void> Function(ColorPresetAsset preset) onDelete;
   final Future<void> Function() onImport;
 
@@ -35,153 +32,256 @@ class SavedColorPresetsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dialogHeight = min(620.0, MediaQuery.sizeOf(context).height * 0.72);
-    return AlertDialog(
-      backgroundColor: theme.colorScheme.surfaceContainerHigh,
-      title: Text(context.l10n.savedColorPresets),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 620),
-        child: SizedBox(
-          width: double.maxFinite,
-          height: dialogHeight,
-          child: AnimatedBuilder(
-            animation: library,
-            builder: (context, _) {
-              final presets = library.presets.toList()
-                ..sort(
-                  (left, right) => left.name.toLowerCase().compareTo(
-                    right.name.toLowerCase(),
-                  ),
-                );
-              if (presets.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.palette_outlined,
-                        size: 40,
-                        color: theme.colorScheme.primary,
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(context.l10n.savedColorPresets),
+        centerTitle: false,
+        actions: [
+          IconButton(
+            onPressed: onImport,
+            icon: const Icon(Icons.upload_file),
+            tooltip: context.l10n.importAction,
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontalPadding = constraints.maxWidth < 600 ? 16.0 : 32.0;
+          return SingleChildScrollView(
+            key: const PageStorageKey<String>('saved-color-presets-scroll'),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              8,
+              horizontalPadding,
+              40,
+            ),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 680),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        bottom: 8,
+                        top: 8,
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        context.l10n.noSavedColorPresetLibrary,
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              return ListView.separated(
-                padding: const EdgeInsets.only(bottom: 4),
-                itemCount: presets.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 6),
-                itemBuilder: (context, index) {
-                  final preset = presets[index];
-                  return Material(
-                    key: ValueKey('saved-color-preset-${preset.name}'),
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(
-                        color: theme.colorScheme.outlineVariant.withValues(
-                          alpha: 0.45,
+                      child: Text(
+                        context.l10n.savedColorPresets,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
                         ),
                       ),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 48),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                preset.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                    Card(
+                      elevation: 0,
+                      margin: EdgeInsets.zero,
+                      color: theme.colorScheme.surfaceContainerLow,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: AnimatedBuilder(
+                          animation: library,
+                          builder: (context, _) {
+                            final presets = library.presets.toList()
+                              ..sort(
+                                (left, right) => left.name
+                                    .toLowerCase()
+                                    .compareTo(right.name.toLowerCase()),
+                              );
+                            if (presets.isEmpty) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 56,
+                                  horizontal: 16,
                                 ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            DualColorPreview(
-                              sung: _preview(preset.sungTextColor),
-                              unsung: _preview(preset.unsungTextColor),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              onPressed: () => onAdd(preset),
-                              tooltip: context.l10n.addToCurrentSingerColors,
-                              color: theme.colorScheme.primary,
-                              icon: const Icon(Icons.add_circle_outline),
-                            ),
-                            PopupMenuButton<_SavedColorPresetAction>(
-                              tooltip: context.l10n.moreActions,
-                              iconColor: theme.colorScheme.onSurfaceVariant,
-                              onSelected: (action) {
-                                switch (action) {
-                                  case _SavedColorPresetAction.rename:
-                                    unawaited(onRename(preset));
-                                  case _SavedColorPresetAction.delete:
-                                    unawaited(onDelete(preset));
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                PopupMenuItem(
-                                  value: _SavedColorPresetAction.rename,
-                                  child: ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    leading: Icon(
-                                      Icons.edit_outlined,
-                                      color: theme.colorScheme.onSurfaceVariant,
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.palette_outlined,
+                                      size: 44,
+                                      color: theme.colorScheme.primary,
                                     ),
-                                    title: Text(context.l10n.renameColorPreset),
-                                  ),
-                                ),
-                                PopupMenuItem(
-                                  value: _SavedColorPresetAction.delete,
-                                  child: ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    leading: Icon(
-                                      Icons.delete_outline,
-                                      color: theme.colorScheme.error,
-                                    ),
-                                    title: Text(
-                                      context.l10n.deleteColorPreset,
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      context.l10n.noSavedColorPresetLibrary,
+                                      textAlign: TextAlign.center,
                                       style: TextStyle(
-                                        color: theme.colorScheme.error,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(height: 20),
+                                    FilledButton.tonalIcon(
+                                      onPressed: onImport,
+                                      icon: const Icon(Icons.upload_file),
+                                      label: Text(context.l10n.importAction),
+                                    ),
+                                  ],
                                 ),
+                              );
+                            }
+                            return Column(
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < presets.length;
+                                  index++
+                                ) ...[
+                                  if (index > 0) const SizedBox(height: 6),
+                                  _buildPresetRow(context, presets[index]),
+                                ],
                               ],
-                            ),
-                          ],
+                            );
+                          },
                         ),
                       ),
                     ),
-                  );
-                },
-              );
-            },
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPresetRow(BuildContext context, ColorPresetAsset preset) {
+    final theme = Theme.of(context);
+    return Material(
+      key: ValueKey('saved-color-preset-${preset.name}'),
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Row(
+            children: [
+              Expanded(
+                child: _EditablePresetName(preset: preset, onRename: onRename),
+              ),
+              const SizedBox(width: 12),
+              Tooltip(
+                message: context.l10n.editColors,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => onEdit(preset),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: DualColorPreview(
+                      sung: _preview(preset.sungTextColor),
+                      unsung: _preview(preset.unsungTextColor),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: () => onAdd(preset),
+                tooltip: context.l10n.addToCurrentSingerColors,
+                color: theme.colorScheme.primary,
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+              IconButton(
+                onPressed: () => onDelete(preset),
+                tooltip: context.l10n.deleteColorPreset,
+                color: theme.colorScheme.error,
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ],
           ),
         ),
       ),
-      actions: [
-        TextButton(onPressed: onImport, child: Text(context.l10n.importAction)),
-        FilledButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(context.l10n.close),
-        ),
-      ],
+    );
+  }
+}
+
+class _EditablePresetName extends StatefulWidget {
+  const _EditablePresetName({required this.preset, required this.onRename});
+
+  final ColorPresetAsset preset;
+  final Future<bool> Function(ColorPresetAsset preset, String newName) onRename;
+
+  @override
+  State<_EditablePresetName> createState() => _EditablePresetNameState();
+}
+
+class _EditablePresetNameState extends State<_EditablePresetName> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.preset.name);
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _EditablePresetName oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && _controller.text != widget.preset.name) {
+      _controller.text = widget.preset.name;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChanged);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) _commit();
+  }
+
+  Future<void> _commit() async {
+    if (_saving) return;
+    final name = _controller.text.trim();
+    if (name == widget.preset.name) return;
+    _saving = true;
+    final saved = await widget.onRename(widget.preset, name);
+    _saving = false;
+    if (!saved && mounted) {
+      _controller.text = widget.preset.name;
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return TextField(
+      controller: _controller,
+      focusNode: _focusNode,
+      maxLength: 80,
+      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      decoration: InputDecoration(
+        counterText: '',
+        hintText: context.l10n.colorPresetName,
+        border: InputBorder.none,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      ),
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) {
+        _commit();
+        _focusNode.unfocus();
+      },
     );
   }
 }
