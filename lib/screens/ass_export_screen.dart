@@ -766,30 +766,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
   set _baselineResolutionHeight(int? value) =>
       _pageState._baselineResolutionHeight = value;
 
-  final List<Color> _presetColors = [
-    const Color(0xFF0000AF), // Blue (0, 0, 175)
-    const Color(0xFFEB0000), // Red
-    const Color(0xFFFF7031), // Orange
-  ];
-
-  final List<Color> _presetEdgeColors = [
-    const Color(0xFF96BFFF), // Blue (150, 191, 255)
-    const Color(0xFFE19696), // Red (225, 150, 150)
-    const Color(0xFFFFFF96), // Yellow (255, 255, 150)
-  ];
-
-  final List<Color> _presetSungOutlineColors = [const Color(0xFFFFFFFF)];
-
-  final List<Color> _presetUnsungOutlineColors = [const Color(0xFF000000)];
-
-  final List<Color> _presetSungDecorationColors = [const Color(0xFFFFE196)];
-
-  final List<Color> _presetUnsungTextColors = [
-    const Color(0xFFE1E1FF),
-    const Color(0xFFFFEBEB),
-    const Color(0xFFFFFFFF),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -2057,7 +2033,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
                           _buildSingerDialogColorSetting(
                             label: context.l10n.textColor,
                             value: edited.sungTextColor,
-                            presets: _presetColors,
                             setDialogState: setDialogState,
                             onChanged: (value) {
                               edited.sungTextColor = value;
@@ -2067,7 +2042,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
                           _buildSingerDialogColorSetting(
                             label: context.l10n.outlineColor,
                             value: edited.sungOutlineColor,
-                            presets: _presetSungOutlineColors,
                             setDialogState: setDialogState,
                             onChanged: (value) {
                               edited.sungOutlineColor = value;
@@ -2077,7 +2051,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
                           _buildSingerDialogColorSetting(
                             label: context.l10n.decorationColor,
                             value: edited.sungDecorationColor,
-                            presets: _presetSungDecorationColors,
                             setDialogState: setDialogState,
                             onChanged: (value) {
                               edited.sungDecorationColor = value;
@@ -2096,7 +2069,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
                           _buildSingerDialogColorSetting(
                             label: context.l10n.textColor,
                             value: edited.unsungTextColor,
-                            presets: _presetUnsungTextColors,
                             setDialogState: setDialogState,
                             onChanged: (value) {
                               edited.unsungTextColor = value;
@@ -2106,7 +2078,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
                           _buildSingerDialogColorSetting(
                             label: context.l10n.outlineColor,
                             value: edited.unsungOutlineColor,
-                            presets: _presetUnsungOutlineColors,
                             setDialogState: setDialogState,
                             onChanged: (value) {
                               edited.unsungOutlineColor = value;
@@ -2116,7 +2087,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
                           _buildSingerDialogColorSetting(
                             label: context.l10n.decorationColor,
                             value: edited.unsungDecorationColor,
-                            presets: _presetEdgeColors,
                             setDialogState: setDialogState,
                             onChanged: (value) {
                               edited.unsungDecorationColor = value;
@@ -2170,7 +2140,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
   Widget _buildSingerDialogColorSetting({
     required String label,
     required AssColorValue value,
-    required List<Color> presets,
     required StateSetter setDialogState,
     required ValueChanged<AssColorValue> onChanged,
   }) {
@@ -2182,7 +2151,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
         onTap: () async {
           final selected = await _showColorPicker(
             value,
-            presets,
             title: context.l10n.chooseItem(label),
           );
           if (selected != null) {
@@ -2743,15 +2711,35 @@ class _AssExportScreenState extends State<AssExportScreen> {
         isGradient: value.isGradient,
       );
 
+  List<Color> _currentSingerPresetColors() {
+    final colors = <Color>[];
+    final seen = <int>{};
+
+    void addValue(AssColorValue value) {
+      for (final stop in value.effectiveStops) {
+        if (seen.add(stop.color.toARGB32())) colors.add(stop.color);
+      }
+    }
+
+    for (final singer in _singerColors) {
+      addValue(singer.sungTextColor);
+      addValue(singer.sungOutlineColor);
+      addValue(singer.sungDecorationColor);
+      addValue(singer.unsungTextColor);
+      addValue(singer.unsungOutlineColor);
+      addValue(singer.unsungDecorationColor);
+    }
+    return colors;
+  }
+
   Future<AssColorValue?> _showColorPicker(
-    AssColorValue initialValue,
-    List<Color> presets, {
+    AssColorValue initialValue, {
     String? title,
   }) async {
     return showAssColorPickerDialog(
       context,
       initialValue: initialValue,
-      suggestedPresets: presets,
+      suggestedPresets: _currentSingerPresetColors(),
       title: title ?? context.l10n.chooseColor,
     );
   }
