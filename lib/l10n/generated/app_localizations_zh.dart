@@ -561,6 +561,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get importN3Project => '导入 N3 工程';
 
   @override
+  String get importN3ProjectDescription => '从 N3 工程读取配色样式';
+
+  @override
+  String get onlineColorEditor => '在线配色编辑器';
+
+  @override
   String n3ColorImportLoaded(Object count) {
     return '已读取 $count 个 N3 配色方案（已忽略描边 2 色）';
   }
@@ -764,6 +770,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get savedColorPresets => '已保存配色';
+
+  @override
+  String get importSavedColorPresets => '导入配色样式';
+
+  @override
+  String get importSavedColorPresetsDescription => '从文本添加或更新已保存配色';
 
   @override
   String get noSavedColorPresetLibrary => '尚未保存配色';

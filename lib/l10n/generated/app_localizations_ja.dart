@@ -561,6 +561,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get importN3Project => 'N3 プロジェクトを読み込む';
 
   @override
+  String get importN3ProjectDescription => 'N3 プロジェクトから配色スタイルを読み込みます';
+
+  @override
+  String get onlineColorEditor => 'オンライン配色エディター';
+
+  @override
   String n3ColorImportLoaded(Object count) {
     return 'N3 配色 $count 件を読み込みました（縁取り 2 色は除外）';
   }
@@ -764,6 +770,12 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get savedColorPresets => '保存済み配色';
+
+  @override
+  String get importSavedColorPresets => '配色スタイルをインポート';
+
+  @override
+  String get importSavedColorPresetsDescription => 'テキストから保存済み配色を追加・更新します';
 
   @override
   String get noSavedColorPresetLibrary => '保存済みの配色はありません';

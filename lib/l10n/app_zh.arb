@@ -166,6 +166,8 @@
   "editColors": "编辑配色",
   "singerColorImport": "导入歌手配色",
   "importN3Project": "导入 N3 工程",
+  "importN3ProjectDescription": "从 N3 工程读取配色样式",
+  "onlineColorEditor": "在线配色编辑器",
   "n3ColorImportLoaded": "已读取 {count} 个 N3 配色方案（已忽略描边 2 色）",
   "@n3ColorImportLoaded": {"placeholders": {"count": {}}},
   "n3ColorImportFailed": "N3 工程读取失败：{error}",
@@ -224,6 +226,8 @@
   ,"colorPresetSaved": "已保存配色预设“{name}”"
   ,"@colorPresetSaved": {"placeholders": {"name": {}}}
   ,"savedColorPresets": "已保存配色"
+  ,"importSavedColorPresets": "导入配色样式"
+  ,"importSavedColorPresetsDescription": "从文本添加或更新已保存配色"
   ,"noSavedColorPresetLibrary": "尚未保存配色"
   ,"addToCurrentSingerColors": "添加"
   ,"moreActions": "更多操作"

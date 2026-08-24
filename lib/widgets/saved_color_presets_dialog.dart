@@ -14,6 +14,7 @@ class SavedColorPresetsScreen extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onImport,
+    required this.onImportN3,
   });
 
   final ColorPresetLibraryService library;
@@ -22,6 +23,7 @@ class SavedColorPresetsScreen extends StatelessWidget {
   final Future<bool> Function(ColorPresetAsset preset, String newName) onRename;
   final Future<void> Function(ColorPresetAsset preset) onDelete;
   final Future<void> Function() onImport;
+  final Future<void> Function() onImportN3;
 
   PreviewColorValue _preview(ColorPresetValue value) => PreviewColorValue(
     color0: Color(value.color0),
@@ -36,14 +38,6 @@ class SavedColorPresetsScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(context.l10n.savedColorPresets),
         centerTitle: false,
-        actions: [
-          IconButton(
-            onPressed: onImport,
-            icon: const Icon(Icons.upload_file),
-            tooltip: context.l10n.importAction,
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -63,6 +57,59 @@ class SavedColorPresetsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        bottom: 8,
+                        top: 8,
+                      ),
+                      child: Text(
+                        context.l10n.importAction,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    Card(
+                      elevation: 0,
+                      margin: EdgeInsets.zero,
+                      color: theme.colorScheme.surfaceContainerLow,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            _buildImportAction(
+                              context,
+                              title: context.l10n.importSavedColorPresets,
+                              description: context
+                                  .l10n
+                                  .importSavedColorPresetsDescription,
+                              onTap: onImport,
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Divider(
+                                height: 1,
+                                color: theme.colorScheme.outlineVariant
+                                    .withValues(alpha: 0.4),
+                              ),
+                            ),
+                            _buildImportAction(
+                              context,
+                              title: context.l10n.importN3Project,
+                              description:
+                                  context.l10n.importN3ProjectDescription,
+                              onTap: onImportN3,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                     Padding(
                       padding: const EdgeInsets.only(
                         left: 16,
@@ -117,12 +164,6 @@ class SavedColorPresetsScreen extends StatelessWidget {
                                             theme.colorScheme.onSurfaceVariant,
                                       ),
                                     ),
-                                    const SizedBox(height: 20),
-                                    FilledButton.tonalIcon(
-                                      onPressed: onImport,
-                                      icon: const Icon(Icons.upload_file),
-                                      label: Text(context.l10n.importAction),
-                                    ),
                                   ],
                                 ),
                               );
@@ -149,6 +190,56 @@ class SavedColorPresetsScreen extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildImportAction(
+    BuildContext context, {
+    required String title,
+    required String description,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

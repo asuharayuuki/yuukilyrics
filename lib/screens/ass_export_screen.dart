@@ -17,6 +17,7 @@ import '../services/color_preset_library_service.dart';
 import '../services/open_type_font.dart';
 import '../services/n3_color_import_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart'
     show
         Clipboard,
@@ -1473,6 +1474,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
           onRename: _renameSavedColorPreset,
           onDelete: _deleteSavedColorPreset,
           onImport: _showSavedColorPresetImportDialog,
+          onImportN3: _showSavedColorPresetN3ImportDialog,
         ),
       ),
     );
@@ -1629,8 +1631,53 @@ class _AssExportScreenState extends State<AssExportScreen> {
     }
   }
 
-  Future<void> _showSavedColorPresetImportDialog() async {
-    final savedMarkdown = await widget.colorPresetLibrary.readMarkdown();
+  Future<void> _showSavedColorPresetN3ImportDialog() async {
+    try {
+      final picked = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['n3proj'],
+        withData: true,
+      );
+      if (picked == null || !mounted) return;
+      final file = picked.files.single;
+      final bytes =
+          file.bytes ??
+          (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) {
+        throw const FileSystemException('Unable to read the selected file.');
+      }
+      final presets = N3ColorImportService().importBytes(bytes);
+      if (!mounted) return;
+      const header = ColorPresetLibraryService.markdownHeader;
+      final rows = presets.map((preset) {
+        final fields = preset.toMarkdownFields();
+        fields[0] = fields[0]
+            .replaceAll('|', '｜')
+            .replaceAll(RegExp(r'[\r\n]+'), ' ');
+        return '| ${fields.join(' | ')} |';
+      });
+      final markdown = [
+        '| ${header.join(' | ')} |',
+        '| ${List.filled(header.length, '---').join(' | ')} |',
+        ...rows,
+      ].join('\n');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.n3ColorImportLoaded(presets.length)),
+        ),
+      );
+      await _showSavedColorPresetImportDialog(initialText: markdown);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.n3ColorImportFailed(error))),
+      );
+    }
+  }
+
+  Future<void> _showSavedColorPresetImportDialog({String? initialText}) async {
+    final savedMarkdown =
+        initialText ?? await widget.colorPresetLibrary.readMarkdown();
     if (!mounted) return;
     final result = await showDialog<_SingerColorImportParseResult>(
       context: context,
@@ -2721,6 +2768,10 @@ class _SingerColorImportDialog extends StatefulWidget {
 }
 
 class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
+  static final Uri _onlineColorEditorUri = Uri.parse(
+    'https://scheme.suisei.eu.org/',
+  );
+
   late final TextEditingController _textController;
   late _SingerColorImportParseResult _parseResult;
 
@@ -2764,48 +2815,19 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
     );
   }
 
-  Future<void> _loadN3Project() async {
+  Future<void> _openOnlineColorEditor() async {
     try {
-      final picked = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['n3proj'],
-        withData: true,
+      final opened = await launchUrl(
+        _onlineColorEditorUri,
+        mode: LaunchMode.externalApplication,
       );
-      if (picked == null || !mounted) return;
-      final file = picked.files.single;
-      final bytes =
-          file.bytes ??
-          (file.path == null ? null : await File(file.path!).readAsBytes());
-      if (bytes == null) {
-        throw const FileSystemException('Unable to read the selected file.');
+      if (!opened) {
+        throw StateError('Unable to open $_onlineColorEditorUri');
       }
-      final presets = N3ColorImportService().importBytes(bytes);
-      if (!mounted) return;
-      const header = ColorPresetLibraryService.markdownHeader;
-      final rows = presets.map((preset) {
-        final fields = preset.toMarkdownFields();
-        fields[0] = fields[0]
-            .replaceAll('|', '｜')
-            .replaceAll(RegExp(r'[\r\n]+'), ' ');
-        return '| ${fields.join(' | ')} |';
-      });
-      _textController.text = [
-        '| ${header.join(' | ')} |',
-        '| ${List.filled(header.length, '---').join(' | ')} |',
-        ...rows,
-      ].join('\n');
-      _textController.selection = TextSelection.collapsed(
-        offset: _textController.text.length,
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.n3ColorImportLoaded(presets.length)),
-        ),
-      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.n3ColorImportFailed(error))),
+        SnackBar(content: Text(context.l10n.operationFailed(error))),
       );
     }
   }
@@ -2834,15 +2856,6 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                context.l10n.singerColorImportHelp,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.45,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -2853,9 +2866,9 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
                     label: Text(context.l10n.paste),
                   ),
                   OutlinedButton.icon(
-                    onPressed: _loadN3Project,
-                    icon: const Icon(Icons.folder_open, size: 18),
-                    label: Text(context.l10n.importN3Project),
+                    onPressed: _openOnlineColorEditor,
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                    label: Text(context.l10n.onlineColorEditor),
                   ),
                 ],
               ),

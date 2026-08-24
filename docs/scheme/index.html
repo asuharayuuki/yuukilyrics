@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="referrer" content="no-referrer">
+    <title>yuukilyrics 配色编辑器</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main id="write" aria-label="yuukilyrics 配色编辑器">
+      <section id="visual-editor" aria-label="yuukilyrics 配色表编辑区"></section>
+    </main>
+
+    <section id="source-view" aria-label="源码模式" hidden>
+      <textarea
+        id="source-editor"
+        aria-label="Markdown 源代码"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        wrap="off"
+      ></textarea>
+    </section>
+
+    <div id="table-context-menu" class="context-menu" role="menu" hidden>
+      <button type="button" role="menuitem" data-action="undo">撤销<span>Ctrl+Z</span></button>
+      <button type="button" role="menuitem" data-action="redo">重做<span>Ctrl+Y</span></button>
+      <div class="context-menu-separator" role="separator"></div>
+      <button type="button" role="menuitem" data-action="cut-text">剪切<span>Ctrl+X</span></button>
+      <button type="button" role="menuitem" data-action="copy-text">复制<span>Ctrl+C</span></button>
+      <button type="button" role="menuitem" data-action="paste-text">粘贴<span>Ctrl+V</span></button>
+      <button type="button" role="menuitem" data-action="select-all-text">全选<span>Ctrl+A</span></button>
+      <div class="context-menu-separator" role="separator"></div>
+      <button type="button" role="menuitem" data-action="find">查找<span>Ctrl+F</span></button>
+      <button type="button" role="menuitem" data-action="replace">替换<span>Ctrl+H</span></button>
+      <div class="context-menu-separator" role="separator"></div>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="insert-gradient"
+        title="g(0:#2DC3C7,40:#27A8AB,60:#F623D9,100:#F625B4)"
+      >
+        插入渐变<span>g(…)</span>
+      </button>
+      <button type="button" role="menuitem" data-action="insert-millefeuille">
+        插入千层分色<span>m(0:#FF0000,50:#0000FF)</span>
+      </button>
+      <div class="context-menu-separator" role="separator"></div>
+      <button type="button" role="menuitem" data-action="copy-table">复制表格<span>Ctrl+C</span></button>
+      <div class="context-menu-separator" role="separator"></div>
+      <button type="button" role="menuitem" data-action="add-row-before">在上方插入行</button>
+      <button type="button" role="menuitem" data-action="add-row-after">在下方插入行</button>
+      <button type="button" role="menuitem" data-action="delete-row">删除当前行</button>
+      <div class="context-menu-separator" role="separator"></div>
+      <button type="button" role="menuitem" data-action="delete-table">删除表格</button>
+    </div>
+
+    <section id="search-panel" class="search-panel" aria-label="查找和替换" hidden>
+      <div class="search-panel-row">
+        <input id="find-input" type="text" placeholder="查找" aria-label="查找内容" autocomplete="off" spellcheck="false">
+        <span id="search-status" aria-live="polite">0/0</span>
+        <button id="find-previous" type="button" title="上一个 (Shift+Enter)" aria-label="上一个">▲</button>
+        <button id="find-next" type="button" title="下一个 (Enter)" aria-label="下一个">▼</button>
+        <button id="close-search" type="button" title="关闭 (Esc)" aria-label="关闭">×</button>
+      </div>
+      <div id="replace-row" class="search-panel-row" hidden>
+        <input id="replace-input" type="text" placeholder="替换为" aria-label="替换内容" autocomplete="off" spellcheck="false">
+        <button id="replace-current" type="button">替换</button>
+        <button id="replace-all" type="button">全部替换</button>
+      </div>
+    </section>
+
+    <section id="color-value-palette" class="color-value-palette" role="dialog" aria-label="颜色配置" hidden>
+      <div id="color-palette-title" class="color-palette-title"></div>
+      <div id="color-palette-stops" class="color-palette-stops"></div>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>

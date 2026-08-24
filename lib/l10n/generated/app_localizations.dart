@@ -1062,6 +1062,18 @@ abstract class AppLocalizations {
   /// **'N3 プロジェクトを読み込む'**
   String get importN3Project;
 
+  /// No description provided for @importN3ProjectDescription.
+  ///
+  /// In ja, this message translates to:
+  /// **'N3 プロジェクトから配色スタイルを読み込みます'**
+  String get importN3ProjectDescription;
+
+  /// No description provided for @onlineColorEditor.
+  ///
+  /// In ja, this message translates to:
+  /// **'オンライン配色エディター'**
+  String get onlineColorEditor;
+
   /// No description provided for @n3ColorImportLoaded.
   ///
   /// In ja, this message translates to:
@@ -1409,6 +1421,18 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'保存済み配色'**
   String get savedColorPresets;
+
+  /// No description provided for @importSavedColorPresets.
+  ///
+  /// In ja, this message translates to:
+  /// **'配色スタイルをインポート'**
+  String get importSavedColorPresets;
+
+  /// No description provided for @importSavedColorPresetsDescription.
+  ///
+  /// In ja, this message translates to:
+  /// **'テキストから保存済み配色を追加・更新します'**
+  String get importSavedColorPresetsDescription;
 
   /// No description provided for @noSavedColorPresetLibrary.
   ///
