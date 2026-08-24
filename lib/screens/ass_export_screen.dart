@@ -76,14 +76,14 @@ const List<AssLineAlignment> kDefaultTwoLineAlignments = [
 
 const List<AssLineAlignment> kDefaultThreeLineAlignments = [
   AssLineAlignment.left,
-  AssLineAlignment.right,
   AssLineAlignment.center,
+  AssLineAlignment.right,
 ];
 
 const List<AssLineAlignment> kDefaultFourLineAlignments = [
   AssLineAlignment.left,
-  AssLineAlignment.right,
   AssLineAlignment.left,
+  AssLineAlignment.center,
   AssLineAlignment.right,
 ];
 

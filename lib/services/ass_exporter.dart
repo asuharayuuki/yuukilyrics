@@ -2275,50 +2275,49 @@ class AssExporter {
       lineLayoutWidths.add(block.lines[index].width);
     }
 
-    final partners = List<int?>.filled(block.lines.length, null);
-    bool areOpposite(int first, int second) {
-      final firstAlignment = lineAlignments[first];
-      final secondAlignment = lineAlignments[second];
-      return (firstAlignment == AssLineAlignment.left &&
-              secondAlignment == AssLineAlignment.right) ||
-          (firstAlignment == AssLineAlignment.right &&
-              secondAlignment == AssLineAlignment.left);
+    // N3's SmartHorizon.Multi balances the page as three horizontal columns.
+    // It uses the widest left-, center-, and right-aligned line and applies one
+    // shared offset to every left/right line. Pairing individual lines makes
+    // three-line pages ignore the center column and gives two left lines on a
+    // four-line page different starting positions.
+    var maxLeftWidth = 0.0;
+    var maxCenterWidth = 0.0;
+    var maxRightWidth = 0.0;
+    var hasLeft = false;
+    var hasRight = false;
+    for (var index = 0; index < block.lines.length; index++) {
+      switch (lineAlignments[index]) {
+        case AssLineAlignment.left:
+          hasLeft = true;
+          maxLeftWidth = max(maxLeftWidth, lineLayoutWidths[index]);
+        case AssLineAlignment.center:
+          maxCenterWidth = max(maxCenterWidth, lineLayoutWidths[index]);
+        case AssLineAlignment.right:
+          hasRight = true;
+          maxRightWidth = max(maxRightWidth, lineLayoutWidths[index]);
+      }
     }
 
-    // Preserve the standard two-line layout for each adjacent left/right pair.
-    for (var index = 0; index + 1 < block.lines.length; index += 2) {
-      if (areOpposite(index, index + 1)) {
-        partners[index] = index + 1;
-        partners[index + 1] = index;
-      }
-    }
-    for (var index = 0; index < block.lines.length; index++) {
-      if (partners[index] != null ||
-          lineAlignments[index] == AssLineAlignment.center) {
-        continue;
-      }
-      int? nearest;
-      for (var candidate = 0; candidate < block.lines.length; candidate++) {
-        if (candidate == index || !areOpposite(index, candidate)) continue;
-        if (nearest == null ||
-            (candidate - index).abs() < (nearest - index).abs()) {
-          nearest = candidate;
-        }
-      }
-      partners[index] = nearest;
-    }
-
-    final lineBoxLefts = <double>[];
-    final lineBoxRights = <double>[];
-    for (var index = 0; index < block.lines.length; index++) {
-      final partner = partners[index];
-      final oppositeWidth = partner == null ? 0.0 : lineLayoutWidths[partner];
+    var smartHorizonOffset = 0.0;
+    if (hasLeft && hasRight) {
       final emptySpace =
-          playResX - hMargin * 2 - lineLayoutWidths[index] - oppositeWidth + fs;
-      final offset = emptySpace > 0 ? emptySpace / 2 : 0.0;
-      lineBoxLefts.add(hMargin + offset);
-      lineBoxRights.add(playResX - hMargin - offset);
+          playResX -
+          hMargin * 2 -
+          maxLeftWidth -
+          maxCenterWidth -
+          maxRightWidth +
+          fs;
+      if (emptySpace > 0) smartHorizonOffset = emptySpace / 2;
     }
+
+    final lineBoxLefts = List<double>.filled(
+      block.lines.length,
+      hMargin + smartHorizonOffset,
+    );
+    final lineBoxRights = List<double>.filled(
+      block.lines.length,
+      playResX - hMargin - smartHorizonOffset,
+    );
 
     final layoutSpacingEm = settings.letterSpacingEm ?? 0;
     final defaultRubyFontSize = _resolveRubyFontSize(fs, null);
