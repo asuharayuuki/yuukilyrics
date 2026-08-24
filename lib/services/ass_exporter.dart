@@ -1113,6 +1113,61 @@ class AssExporter {
     return _colorToAss(_colorAt(value, position));
   }
 
+  static Color _blurredColorAt(
+    AssColorValue value,
+    double position,
+    double normalizedSigma,
+  ) {
+    if (!value.isGradient || normalizedSigma <= 0) {
+      return _colorAt(value, position);
+    }
+
+    // N3 draws the complete multi-colour outline into a transparent bitmap
+    // and applies one Gaussian blur to that bitmap. ASS cannot blur a group of
+    // separately coloured events, so pre-convolve the vertical colour field
+    // before emitting narrow clipped bands. This is especially important for
+    // mille-feuille brushes: their hard source transitions become softly
+    // blended by N3's decoration blur instead of remaining visible as stripes.
+    const sampleRadius = 3.0;
+    const sampleCount = 17;
+    var alpha = 0.0;
+    var red = 0.0;
+    var green = 0.0;
+    var blue = 0.0;
+    var totalWeight = 0.0;
+    for (var index = 0; index < sampleCount; index++) {
+      final unit = index / (sampleCount - 1) * 2 - 1;
+      final sigmaOffset = unit * sampleRadius;
+      final weight = exp(-0.5 * sigmaOffset * sigmaOffset);
+      final color = _colorAt(
+        value,
+        (position + sigmaOffset * normalizedSigma).clamp(0.0, 1.0),
+      );
+      alpha += color.a * weight;
+      red += color.r * weight;
+      green += color.g * weight;
+      blue += color.b * weight;
+      totalWeight += weight;
+    }
+    return Color.from(
+      alpha: alpha / totalWeight,
+      red: red / totalWeight,
+      green: green / totalWeight,
+      blue: blue / totalWeight,
+    );
+  }
+
+  static (double, double) _n3GradientRange({
+    required double centerY,
+    required double fontSize,
+    required double outlineWidth,
+  }) {
+    // NicoKaraMaker3 SetMultiColorAreas uses DrawTop + EdgeSize / 2 and
+    // DrawBottom - EdgeSize / 2 for text, outline and decoration brushes.
+    final halfHeight = max(0.5, (fontSize - outlineWidth) / 2);
+    return (centerY - halfHeight, centerY + halfHeight);
+  }
+
   static List<_GradientBand> _gradientBands({
     required double clipTop,
     required double clipBottom,
@@ -1126,8 +1181,11 @@ class AssExporter {
       return [_GradientBand(top: clipTop, bottom: clipBottom, position: 0.5)];
     }
 
-    const bandCount = 24;
     final height = gradientBottom - gradientTop;
+    // Fixed 24-way quantisation leaves roughly 5 px stripes at the normal
+    // 1080p lyric size. Keep smooth bands close to two output pixels while
+    // bounding event growth for unusually large text.
+    final bandCount = (height / 2).ceil().clamp(24, 96);
     final boundaries = <double>{
       if (smooth)
         for (var index = 0; index <= bandCount; index++) index / bandCount
@@ -1171,13 +1229,20 @@ class AssExporter {
     if (decorationWidth <= 0) return;
 
     final hasGradient = color.isGradient;
+    final gradientRange = _n3GradientRange(
+      centerY: visualY,
+      fontSize: fontSize,
+      outlineWidth: baseOutlineWidth,
+    );
     final bands = _gradientBands(
       clipTop: visualY - fontSize * 1.5,
       clipBottom: visualY + fontSize * 1.5,
-      gradientTop: visualY - fontSize * 0.5,
-      gradientBottom: visualY + fontSize * 0.5,
+      gradientTop: gradientRange.$1,
+      gradientBottom: gradientRange.$2,
       enabled: hasGradient,
-      smooth: color.mode == AssColorMode.gradient,
+      // N3 blurs the complete mille-feuille result. It therefore needs dense
+      // sampling here even though the source brush itself has hard stops.
+      smooth: true,
       breakpoints: color.effectiveStops.map((stop) => stop.position),
     );
     final numLayers = blurLevel + 1;
@@ -1188,7 +1253,12 @@ class AssExporter {
       final borderWidth = baseOutlineWidth + layerWidth / 2;
 
       for (final band in bands) {
-        final assColor = _assColorAt(color, band.position);
+        final sampledColor = _blurredColorAt(
+          color,
+          band.position,
+          layerWidth / (gradientRange.$2 - gradientRange.$1),
+        );
+        final assColor = _colorToAss(sampledColor);
         final clipTag = hasGradient
             ? '\\clip(0,${band.top.toStringAsFixed(1)},10000,${band.bottom.toStringAsFixed(1)})'
             : '';
@@ -1253,6 +1323,7 @@ class AssExporter {
     required double posY,
     required double visualY,
     required double fontSize,
+    required double outlineWidth,
     required AssColorValue textColor,
     required AssColorValue outlineColor,
     required double fullLeft,
@@ -1265,11 +1336,16 @@ class AssExporter {
     required Duration displayEnd,
   }) {
     final hasGradient = textColor.isGradient || outlineColor.isGradient;
+    final gradientRange = _n3GradientRange(
+      centerY: visualY,
+      fontSize: fontSize,
+      outlineWidth: outlineWidth,
+    );
     final bands = _gradientBands(
       clipTop: visualY - fontSize * 1.5,
       clipBottom: visualY + fontSize * 1.5,
-      gradientTop: visualY - fontSize * 0.5,
-      gradientBottom: visualY + fontSize * 0.5,
+      gradientTop: gradientRange.$1,
+      gradientBottom: gradientRange.$2,
       enabled: hasGradient,
       smooth:
           textColor.mode == AssColorMode.gradient ||
@@ -2854,6 +2930,7 @@ class AssExporter {
                 reverseClip: true,
                 textColor: unsungTextColor,
                 outlineColor: unsungOutlineColor,
+                gradientOutlineWidth: baseOutW,
               );
 
               _writeSyllableClip(
@@ -2875,6 +2952,7 @@ class AssExporter {
                 layer: 1,
                 textColor: sungTextColor,
                 outlineColor: sungOutlineColor,
+                gradientOutlineWidth: baseOutW,
               );
             }
           } else if (node is LyricRuby) {
@@ -3100,6 +3178,7 @@ class AssExporter {
                 posY: y,
                 visualY: y,
                 fontSize: fs,
+                outlineWidth: baseOutW,
                 textColor: unsungTextColor,
                 outlineColor: unsungOutlineColor,
                 fullLeft: kLeft,
@@ -3120,6 +3199,7 @@ class AssExporter {
                 posY: y,
                 visualY: y,
                 fontSize: fs,
+                outlineWidth: baseOutW,
                 textColor: sungTextColor,
                 outlineColor: sungOutlineColor,
                 fullLeft: kLeft,
@@ -3182,6 +3262,7 @@ class AssExporter {
                   posY: rubyY,
                   visualY: rubyY,
                   fontSize: rubyFs,
+                  outlineWidth: rubyBaseOutW,
                   textColor: unsungTextColor,
                   outlineColor: unsungOutlineColor,
                   fullLeft: rkLeft,
@@ -3202,6 +3283,7 @@ class AssExporter {
                   posY: rubyY,
                   visualY: rubyY,
                   fontSize: rubyFs,
+                  outlineWidth: rubyBaseOutW,
                   textColor: sungTextColor,
                   outlineColor: sungOutlineColor,
                   fullLeft: rkLeft,
@@ -3241,6 +3323,7 @@ class AssExporter {
     required int layer,
     required AssColorValue textColor,
     required AssColorValue outlineColor,
+    double gradientOutlineWidth = 0,
     bool reverseClip = false,
     double clipHeightFactor = 1.5,
   }) {
@@ -3248,11 +3331,16 @@ class AssExporter {
     double clipBottom = y + fs * clipHeightFactor;
     double kLeft = x - outW * 4.0;
     double kRight = x + w + outW * 4.0;
+    final gradientRange = _n3GradientRange(
+      centerY: y,
+      fontSize: fs,
+      outlineWidth: gradientOutlineWidth,
+    );
     final bands = _gradientBands(
       clipTop: clipTop,
       clipBottom: clipBottom,
-      gradientTop: y - fs * 0.5,
-      gradientBottom: y + fs * 0.5,
+      gradientTop: gradientRange.$1,
+      gradientBottom: gradientRange.$2,
       enabled: textColor.isGradient || outlineColor.isGradient,
       smooth:
           textColor.mode == AssColorMode.gradient ||

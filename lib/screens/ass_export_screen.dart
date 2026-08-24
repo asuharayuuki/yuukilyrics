@@ -3812,13 +3812,40 @@ class _AssStyleSamplePainter extends CustomPainter {
   Paint _colorPaint(AssColorValue value, Rect bounds, {double opacity = 1}) {
     final paint = Paint()..isAntiAlias = true;
     if (value.isGradient) {
+      final sourceStops = value.effectiveStops;
+      final colors = <Color>[];
+      final positions = <double>[];
+      if (value.isMillefeuille && sourceStops.length > 1) {
+        // N3 makes a hard band by repeating each colour at the following
+        // stop. The final stop is the lower boundary, not another visible
+        // band of its own.
+        for (var index = 0; index < sourceStops.length - 1; index++) {
+          final current = sourceStops[index];
+          final next = sourceStops[index + 1];
+          colors
+            ..add(current.color.withValues(alpha: opacity))
+            ..add(current.color.withValues(alpha: opacity));
+          positions
+            ..add(current.position)
+            ..add(next.position);
+        }
+      } else {
+        for (final stop in sourceStops) {
+          colors.add(stop.color.withValues(alpha: opacity));
+          positions.add(stop.position);
+        }
+      }
+      if (colors.length == 1) {
+        colors.add(colors.first);
+        positions
+          ..clear()
+          ..addAll(const [0, 1]);
+      }
       paint.shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [
-          value.color0.withValues(alpha: opacity),
-          value.color100.withValues(alpha: opacity),
-        ],
+        colors: colors,
+        stops: positions,
       ).createShader(bounds);
     } else {
       paint.color = value.color0.withValues(alpha: opacity);
