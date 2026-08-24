@@ -33,10 +33,11 @@ jobs:
           fi
 
           IFS='.' read -r YEAR MONTH DAY <<< "$VERSION"
-          printf -v EXPECTED_TAG 'v%s.%02d.%02d' "$YEAR" "$MONTH" "$DAY"
+          EXPECTED_TAG="v$VERSION"
+          printf -v PADDED_TAG 'v%s.%02d.%02d' "$YEAR" "$MONTH" "$DAY"
 
-          if [ "$GITHUB_REF_NAME" != "$EXPECTED_TAG" ]; then
-            echo "ERROR: Tag $GITHUB_REF_NAME does not match expected tag $EXPECTED_TAG for pubspec version $VERSION"
+          if [ "$GITHUB_REF_NAME" != "$EXPECTED_TAG" ] && [ "$GITHUB_REF_NAME" != "$PADDED_TAG" ]; then
+            echo "ERROR: Tag $GITHUB_REF_NAME does not match $EXPECTED_TAG or $PADDED_TAG for pubspec version $VERSION"
             exit 1
           fi
 
