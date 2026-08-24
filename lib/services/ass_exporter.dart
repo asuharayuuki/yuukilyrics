@@ -1681,10 +1681,10 @@ class AssExporter {
     final rubyBlockSpacing = _trailingSpacing(rubyVisibleText, rubySpacing);
     final baseBlockW = baseContentW > 0 ? baseContentW + baseBlockSpacing : 0.0;
     final rubyBlockW = rubyContentW > 0 ? rubyContentW + rubyBlockSpacing : 0.0;
-    final naturalBaseRun = node.baseText.characters.every(
-      (char) => !_isWideGrapheme(char),
-    );
-    if (naturalBaseRun) return baseBlockW;
+    // N3 resolves interference between adjacent ruby runs by moving the later
+    // base/ruby group to the right. Reserving the wider block is the ASS layout
+    // equivalent: a narrow base such as "1" must not advance by less than its
+    // wider ruby (for example "いち"), or the following ruby will overlap it.
     return baseBlockW > rubyBlockW ? baseBlockW : rubyBlockW;
   }
 
