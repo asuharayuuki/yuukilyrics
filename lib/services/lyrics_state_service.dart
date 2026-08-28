@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/l10n.dart';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/lyric_ast.dart';
 import '../parser/lrc_parser.dart';
@@ -192,6 +193,15 @@ class LyricsStateService extends ChangeNotifier {
     int? tagNodeIndex,
     int selectedTextLength = 1,
   ]) {
+    if (_document == null ||
+        lineIndex < 0 ||
+        lineIndex >= _document!.lines.length ||
+        nodeIndex < 0 ||
+        nodeIndex >= _document!.lines[lineIndex].nodes.length) {
+      _selectionPath = null;
+      notifyListeners();
+      return;
+    }
     _selectionPath = [
       lineIndex,
       nodeIndex,
@@ -224,18 +234,32 @@ class LyricsStateService extends ChangeNotifier {
   }
 
   LyricNode? getSelectedNode() {
-    if (_document == null || _selectionPath == null) return null;
+    if (!_selectionIsValid()) return null;
     final li = _selectionPath![0];
     final ni = _selectionPath![1];
-    if (li < _document!.lines.length) {
+    if (li >= 0 && li < _document!.lines.length) {
       final nodes = _document!.lines[li].nodes;
-      if (ni < nodes.length) return nodes[ni];
+      if (ni >= 0 && ni < nodes.length) return nodes[ni];
     }
     return null;
   }
 
+  bool _selectionIsValid() {
+    if (_document == null ||
+        _selectionPath == null ||
+        _selectionPath!.length < 2) {
+      return false;
+    }
+    final lineIndex = _selectionPath![0];
+    final nodeIndex = _selectionPath![1];
+    return lineIndex >= 0 &&
+        lineIndex < _document!.lines.length &&
+        nodeIndex >= 0 &&
+        nodeIndex < _document!.lines[lineIndex].nodes.length;
+  }
+
   String? matchingPrefixAtSelection(Iterable<String> prefixes) {
-    if (_document == null || _selectionPath == null) return null;
+    if (!_selectionIsValid()) return null;
     final lineIndex = _selectionPath![0];
     if (lineIndex < 0 || lineIndex >= _document!.lines.length) return null;
 
@@ -281,7 +305,7 @@ class LyricsStateService extends ChangeNotifier {
     String prefix,
     Iterable<String> knownPrefixes,
   ) {
-    if (_document == null || _selectionPath == null) return false;
+    if (!_selectionIsValid()) return false;
     final lineIndex = _selectionPath![0];
     if (lineIndex < 0 || lineIndex >= _document!.lines.length) return false;
 
@@ -650,7 +674,7 @@ class LyricsStateService extends ChangeNotifier {
   // ─── Cursor Count Manipulation ─────────────────────────────────
 
   void addCursorToSelected() {
-    if (_document == null || _selectionPath == null) return;
+    if (!_selectionIsValid()) return;
     final li = _selectionPath![0];
     final ni = _selectionPath![1];
     final line = _document!.lines[li];
@@ -736,7 +760,7 @@ class LyricsStateService extends ChangeNotifier {
   }
 
   void removeCursorFromSelected() {
-    if (_document == null || _selectionPath == null) return;
+    if (!_selectionIsValid()) return;
     final li = _selectionPath![0];
     final ni = _selectionPath![1];
     final line = _document!.lines[li];
@@ -829,7 +853,7 @@ class LyricsStateService extends ChangeNotifier {
   /// full-width plus marker on the left unit. [LyricLine.toLrcString] performs
   /// the temporary `{base|ruby}` grouping when the document is serialized.
   void mergeSelectedWithNext() {
-    if (_document == null || _selectionPath == null) return;
+    if (!_selectionIsValid()) return;
     final li = _selectionPath![0];
     var ni = _selectionPath![1];
     final line = _document!.lines[li];
@@ -936,7 +960,7 @@ class LyricsStateService extends ChangeNotifier {
   }
 
   void updateRubyText(String newRubyText) {
-    if (_document == null || _selectionPath == null) return;
+    if (!_selectionIsValid()) return;
     final li = _selectionPath![0];
     final ni = _selectionPath![1];
     final line = _document!.lines[li];
@@ -1094,7 +1118,7 @@ class LyricsStateService extends ChangeNotifier {
   }
 
   void toggleEndTag() {
-    if (_document == null || _selectionPath == null) return;
+    if (!_selectionIsValid()) return;
     final li = _selectionPath![0];
     final ni = _selectionPath![1];
     final line = _document!.lines[li];
@@ -1132,7 +1156,7 @@ class LyricsStateService extends ChangeNotifier {
   }
 
   void splitSelectedNode() {
-    if (_document == null || _selectionPath == null) return;
+    if (!_selectionIsValid()) return;
     final li = _selectionPath![0];
     final ni = _selectionPath![1];
     final line = _document!.lines[li];
@@ -1325,7 +1349,7 @@ class LyricsStateService extends ChangeNotifier {
 
   /// Helper to properly interleave tags and characters for LyricRuby
   List<LyricNode> _rebuildRubyNodes(List<LyricTimeTag> tags, String text) {
-    final chars = text.split('');
+    final chars = text.characters.toList();
     final nodes = <LyricNode>[];
 
     if (tags.isEmpty) {
@@ -1502,10 +1526,10 @@ class LyricsStateService extends ChangeNotifier {
         for (int j = result.length - 1; j >= 0; j--) {
           final pNode = result[j];
           if (pNode is LyricText && pNode.text.trim().isNotEmpty) {
-            prevChar = pNode.text[pNode.text.length - 1];
+            prevChar = pNode.text.characters.last;
             break;
-          } else if (pNode is LyricRuby) {
-            prevChar = pNode.baseText[pNode.baseText.length - 1];
+          } else if (pNode is LyricRuby && pNode.baseText.isNotEmpty) {
+            prevChar = pNode.baseText.characters.last;
             break;
           }
         }
@@ -1514,10 +1538,10 @@ class LyricsStateService extends ChangeNotifier {
         for (int j = i + 1; j < splitNodes.length; j++) {
           final nNode = splitNodes[j];
           if (nNode is LyricText && nNode.text.trim().isNotEmpty) {
-            nextChar = nNode.text[0];
+            nextChar = nNode.text.characters.first;
             break;
-          } else if (nNode is LyricRuby) {
-            nextChar = nNode.baseText[0];
+          } else if (nNode is LyricRuby && nNode.baseText.isNotEmpty) {
+            nextChar = nNode.baseText.characters.first;
             break;
           }
         }
@@ -1550,6 +1574,7 @@ class LyricsStateService extends ChangeNotifier {
   List<TextToken> tokenizeTextAdvanced(String text) {
     if (text.isEmpty) return [];
 
+    final units = text.characters.toList();
     final tokens = <TextToken>[];
     final buffer = StringBuffer();
 
@@ -1561,48 +1586,53 @@ class LyricsStateService extends ChangeNotifier {
     final RegExp punctRegex = RegExp(
       r'[、。！？，．：；（）「」『』〜ー…\s\u3000-\u303F\uFF00-\uFF0F\uFF1A-\uFF20\uFF3B-\uFF40\uFF5B-\uFF65]',
     );
+    bool isCjk(String value) {
+      if (cjkRegex.hasMatch(value)) return true;
+      final rune = value.runes.first;
+      return (rune >= 0x20000 && rune <= 0x3FFFF);
+    }
 
     int i = 0;
-    while (i < text.length) {
-      final char = text[i];
+    while (i < units.length) {
+      final char = units[i];
       if (fullWidthDigitRegex.hasMatch(char)) {
         tokens.add(TextToken(char, false));
         i++;
       } else if (asciiRegex.hasMatch(char)) {
         buffer.write(char);
         i++;
-        while (i < text.length &&
-            asciiRegex.hasMatch(text[i]) &&
-            !fullWidthDigitRegex.hasMatch(text[i])) {
-          buffer.write(text[i]);
+        while (i < units.length &&
+            asciiRegex.hasMatch(units[i]) &&
+            !fullWidthDigitRegex.hasMatch(units[i])) {
+          buffer.write(units[i]);
           i++;
         }
-        while (i < text.length &&
-            (punctRegex.hasMatch(text[i]) ||
-                (!asciiRegex.hasMatch(text[i]) &&
-                    !cjkRegex.hasMatch(text[i]) &&
-                    !fullWidthDigitRegex.hasMatch(text[i])))) {
-          buffer.write(text[i]);
+        while (i < units.length &&
+            (punctRegex.hasMatch(units[i]) ||
+                (!asciiRegex.hasMatch(units[i]) &&
+                    !isCjk(units[i]) &&
+                    !fullWidthDigitRegex.hasMatch(units[i])))) {
+          buffer.write(units[i]);
           i++;
         }
         tokens.add(TextToken(buffer.toString(), false));
         buffer.clear();
-      } else if (cjkRegex.hasMatch(char)) {
+      } else if (isCjk(char)) {
         buffer.write(char);
         i++;
 
         final smallKanaRegex = RegExp(r'[ぁぃぅぇぉっゃゅょァィゥェォッャュョー゛]');
-        while (i < text.length && smallKanaRegex.hasMatch(text[i])) {
-          buffer.write(text[i]);
+        while (i < units.length && smallKanaRegex.hasMatch(units[i])) {
+          buffer.write(units[i]);
           i++;
         }
 
-        while (i < text.length &&
-            (punctRegex.hasMatch(text[i]) ||
-                (!asciiRegex.hasMatch(text[i]) &&
-                    !cjkRegex.hasMatch(text[i]) &&
-                    !fullWidthDigitRegex.hasMatch(text[i])))) {
-          buffer.write(text[i]);
+        while (i < units.length &&
+            (punctRegex.hasMatch(units[i]) ||
+                (!asciiRegex.hasMatch(units[i]) &&
+                    !isCjk(units[i]) &&
+                    !fullWidthDigitRegex.hasMatch(units[i])))) {
+          buffer.write(units[i]);
           i++;
         }
 
@@ -1726,19 +1756,26 @@ class LyricsStateService extends ChangeNotifier {
       );
 
       final texts = batch.map((j) => j.node.text).toList();
-      final batchResults = await _fetchRubyBatch(texts);
-
-      if (batchResults != null) {
-        // Note: batchResults.length might not exactly equal batch.length if API behaves unexpectedly.
-        // We will map as many as returned safely.
-        final limit = batchResults.length < batch.length
-            ? batchResults.length
-            : batch.length;
-        for (int i = 0; i < limit; i++) {
-          final job = batch[i];
-          jobResults.putIfAbsent(job.lineIndex, () => {});
-          jobResults[job.lineIndex]![job.nodeIndex] = batchResults[i];
+      late final List<List<LyricNode>> batchResults;
+      try {
+        batchResults = await _fetchRubyBatch(texts);
+      } catch (error) {
+        debugPrint('Yahoo API Error: $error');
+        if (context.mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error.toString())));
         }
+        progressNotifier.dispose();
+        statusNotifier.dispose();
+        return;
+      }
+
+      for (int i = 0; i < batch.length; i++) {
+        final job = batch[i];
+        jobResults.putIfAbsent(job.lineIndex, () => {});
+        jobResults[job.lineIndex]![job.nodeIndex] = batchResults[i];
       }
 
       completedBatches++;
@@ -1802,8 +1839,7 @@ class LyricsStateService extends ChangeNotifier {
     final smallKana = RegExp(r'[ぁぃぅぇぉっゃゅょァィゥェォッャュョ]');
     final longVoiced = RegExp(r'[ー゛]');
 
-    for (int i = 0; i < furigana.length; i++) {
-      final ch = furigana[i];
+    for (final ch in furigana.characters) {
       if (result.isNotEmpty &&
           (smallKana.hasMatch(ch) || longVoiced.hasMatch(ch))) {
         result.last += ch; // merge into preceding mora
@@ -1839,121 +1875,150 @@ class LyricsStateService extends ChangeNotifier {
     return expanded;
   }
 
-  Future<List<List<LyricNode>>?> _fetchRubyBatch(List<String> texts) async {
-    try {
-      final joinedText = texts.join('\n');
-      final url = Uri.parse(
-        'https://jlp.yahooapis.jp/FuriganaService/V2/furigana',
-      );
-      final requestBody = {
-        "id": "yuukilyrics",
-        "jsonrpc": "2.0",
-        "method": "jlp.furiganaservice.furigana",
-        "params": {"q": joinedText, "grade": 1},
-      };
+  Future<List<List<LyricNode>>> _fetchRubyBatch(List<String> texts) async {
+    final joinedText = texts.join('\n');
+    final url = Uri.parse(
+      'https://jlp.yahooapis.jp/FuriganaService/V2/furigana',
+    );
+    final requestBody = {
+      "id": "yuukilyrics",
+      "jsonrpc": "2.0",
+      "method": "jlp.furiganaservice.furigana",
+      "params": {"q": joinedText, "grade": 1},
+    };
 
-      final response = await http
-          .post(
-            url,
-            headers: {
-              'Content-Type': 'application/json',
-              'User-Agent': 'Yahoo AppID: $yahooAppId',
-            },
-            body: jsonEncode(requestBody),
-          )
-          .timeout(const Duration(seconds: 10));
+    final response = await http
+        .post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Yahoo AppID: $yahooAppId',
+          },
+          body: jsonEncode(requestBody),
+        )
+        .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        final words = json['result']['word'] as List;
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Invalid Yahoo API response.');
+      }
+      final result = decoded['result'];
+      if (result is! Map<String, dynamic>) {
+        throw const FormatException('Yahoo API result is missing.');
+      }
+      final wordsValue = result['word'];
+      if (wordsValue is! List) {
+        throw const FormatException('Yahoo API word list is missing.');
+      }
+      final words = wordsValue;
 
-        final processedWords = <Map<String, dynamic>>[];
-        final smallKanaRegex = RegExp(r'^[ぁぃぅぇぉっゃゅょァィゥェォッャュョー゛]+');
+      final processedWords = <Map<String, dynamic>>[];
+      final smallKanaRegex = RegExp(r'^[ぁぃぅぇぉっゃゅょァィゥェォッャュョー゛]+');
 
-        for (var w in words) {
-          final surface = w['surface'] as String;
-          final furigana = w['furigana'] as String?;
-          final subword = w['subword'];
+      for (final value in words) {
+        if (value is! Map) {
+          throw const FormatException('Invalid Yahoo API word entry.');
+        }
+        final surfaceValue = value['surface'];
+        final furiganaValue = value['furigana'];
+        if (surfaceValue is! String ||
+            (furiganaValue != null && furiganaValue is! String)) {
+          throw const FormatException('Invalid Yahoo API word fields.');
+        }
+        final surface = surfaceValue;
+        final furigana = furiganaValue as String?;
+        final subword = value['subword'];
 
-          final match = smallKanaRegex.firstMatch(surface);
-          if (match != null && processedWords.isNotEmpty) {
-            final kana = match.group(0)!;
-            final prev = processedWords.last;
+        final match = smallKanaRegex.firstMatch(surface);
+        if (match != null && processedWords.isNotEmpty) {
+          final kana = match.group(0)!;
+          final prev = processedWords.last;
 
-            prev['surface'] = (prev['surface'] as String) + kana;
-            if (prev['furigana'] != null) {
-              prev['furigana'] = (prev['furigana'] as String) + kana;
-            }
+          prev['surface'] = (prev['surface'] as String) + kana;
+          if (prev['furigana'] != null) {
+            prev['furigana'] = (prev['furigana'] as String) + kana;
+          }
 
-            final remainder = surface.substring(kana.length);
-            if (remainder.isNotEmpty) {
-              processedWords.add({
-                'surface': remainder,
-                'furigana': furigana?.substring(kana.length),
-                'subword': subword,
-              });
-            }
-          } else {
+          final remainder = surface.substring(kana.length);
+          if (remainder.isNotEmpty) {
+            final remainingFurigana =
+                furigana != null && furigana.startsWith(kana)
+                ? furigana.substring(kana.length)
+                : furigana;
             processedWords.add({
-              'surface': surface,
-              'furigana': furigana,
+              'surface': remainder,
+              'furigana': remainingFurigana,
               'subword': subword,
             });
           }
+        } else {
+          processedWords.add({
+            'surface': surface,
+            'furigana': furigana,
+            'subword': subword,
+          });
         }
+      }
 
-        final batchResults = <List<LyricNode>>[];
-        var currentNodes = <LyricNode>[];
+      final batchResults = <List<LyricNode>>[];
+      var currentNodes = <LyricNode>[];
 
-        for (var w in processedWords) {
-          final surface = w['surface'] as String;
-          final furigana = w['furigana'] as String?;
-          final subword = w['subword'];
+      for (var w in processedWords) {
+        final surface = w['surface'] as String;
+        final furigana = w['furigana'] as String?;
+        final subword = w['subword'];
 
-          if (surface.contains('\n')) {
-            final parts = surface.split('\n');
-            for (int i = 0; i < parts.length; i++) {
-              final part = parts[i];
-              if (part.isNotEmpty) {
-                currentNodes.add(LyricText(part));
-              }
-              if (i < parts.length - 1) {
-                batchResults.add(currentNodes);
-                currentNodes = [];
-              }
+        if (surface.contains('\n')) {
+          final parts = surface.split('\n');
+          for (int i = 0; i < parts.length; i++) {
+            final part = parts[i];
+            if (part.isNotEmpty) {
+              currentNodes.add(LyricText(part));
             }
-          } else {
-            if (subword != null &&
-                subword is List &&
-                furigana != null &&
-                furigana != surface) {
-              final int type = _calculateTagCount(surface, furigana);
-              currentNodes.add(
-                LyricRuby(
-                  baseText: surface,
-                  rubyNodes: _expandRubyNodes(type, surface, furigana),
-                ),
-              );
-            } else if (furigana != null && furigana != surface) {
-              final int type = _calculateTagCount(surface, furigana);
-              currentNodes.add(
-                LyricRuby(
-                  baseText: surface,
-                  rubyNodes: _expandRubyNodes(type, surface, furigana),
-                ),
-              );
-            } else {
-              currentNodes.add(LyricText(surface));
+            if (i < parts.length - 1) {
+              batchResults.add(currentNodes);
+              currentNodes = [];
             }
           }
+        } else {
+          if (subword != null &&
+              subword is List &&
+              furigana != null &&
+              furigana != surface) {
+            final int type = _calculateTagCount(surface, furigana);
+            currentNodes.add(
+              LyricRuby(
+                baseText: surface,
+                rubyNodes: _expandRubyNodes(type, surface, furigana),
+              ),
+            );
+          } else if (furigana != null && furigana != surface) {
+            final int type = _calculateTagCount(surface, furigana);
+            currentNodes.add(
+              LyricRuby(
+                baseText: surface,
+                rubyNodes: _expandRubyNodes(type, surface, furigana),
+              ),
+            );
+          } else {
+            currentNodes.add(LyricText(surface));
+          }
         }
-        batchResults.add(currentNodes);
-        return batchResults;
       }
-    } catch (e) {
-      debugPrint('Yahoo API Error: $e');
+      batchResults.add(currentNodes);
+      if (batchResults.length != texts.length) {
+        throw FormatException(
+          'Yahoo API returned ${batchResults.length} lines for '
+          '${texts.length} inputs.',
+        );
+      }
+      return batchResults;
     }
-    return null;
+    throw HttpException(
+      'Yahoo API request failed with status ${response.statusCode}.',
+      uri: url,
+    );
   }
 }
 

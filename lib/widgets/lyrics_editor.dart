@@ -1215,15 +1215,7 @@ class _LyricsEditorState extends State<LyricsEditor> {
   }
 
   Duration? _parseTime(String timeStr) {
-    if (timeStr.isEmpty) return null;
-    // Format: mm:ss:xx (hundredths)
-    final parts = timeStr.split(':');
-    if (parts.length != 3) return null;
-    final mm = int.tryParse(parts[0]);
-    final ss = int.tryParse(parts[1]);
-    final xx = int.tryParse(parts[2]);
-    if (mm == null || ss == null || xx == null) return null;
-    return Duration(minutes: mm, seconds: ss, milliseconds: xx * 10);
+    return LyricTimeTag.parseDuration(timeStr);
   }
 
   // ─── Build one character cell widget ────────────────────────────────────

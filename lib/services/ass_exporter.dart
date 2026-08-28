@@ -1385,35 +1385,7 @@ class AssExporter {
   }
 
   static Duration _parseTime(String timeStr) {
-    try {
-      final parts = timeStr.replaceAll('.', ':').split(':');
-      int parseMs(String s) {
-        if (s.length == 3) return int.parse(s);
-        if (s.length == 2) return int.parse(s) * 10;
-        if (s.length == 1) return int.parse(s) * 100;
-        return int.parse(s.substring(0, 3));
-      }
-
-      if (parts.length == 4) {
-        int h = int.parse(parts[0]);
-        int m = int.parse(parts[1]);
-        int s = int.parse(parts[2]);
-        int ms = parseMs(parts[3]);
-        return Duration(hours: h, minutes: m, seconds: s, milliseconds: ms);
-      } else if (parts.length == 3) {
-        int m = int.parse(parts[0]);
-        int s = int.parse(parts[1]);
-        int ms = parseMs(parts[2]);
-        return Duration(minutes: m, seconds: s, milliseconds: ms);
-      } else if (parts.length == 2) {
-        int m = int.parse(parts[0]);
-        int s = int.parse(parts[1]);
-        return Duration(minutes: m, seconds: s);
-      }
-    } catch (e) {
-      // fallback
-    }
-    return Duration.zero;
+    return LyricTimeTag.parseDuration(timeStr) ?? Duration.zero;
   }
 
   static double _getCharWidth(

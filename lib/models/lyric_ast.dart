@@ -15,7 +15,7 @@ class LyricTimeTag extends LyricNode {
 
   /// Converts duration to mm:ss:xx (hundredths of second) format.
   static String formatDuration(Duration d) {
-    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final mm = d.inMinutes.toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     final xx = (d.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(
       2,
@@ -26,25 +26,29 @@ class LyricTimeTag extends LyricNode {
 
   /// Parses mm:ss:xx or mm:ss.xx back to Duration. Returns null if invalid.
   static Duration? parseDuration(String timeStr) {
-    if (timeStr.isEmpty) return null;
-    final parts = timeStr.split(RegExp(r'[:.]'));
-    if (parts.length >= 2) {
-      final mm = int.tryParse(parts[0]) ?? 0;
-      final ss = int.tryParse(parts[1]) ?? 0;
-      int xx = 0;
-      if (parts.length >= 3) {
-        String msPart = parts[2];
-        if (msPart.length == 2) {
-          xx = (int.tryParse(msPart) ?? 0) * 10;
-        } else if (msPart.length == 3) {
-          xx = int.tryParse(msPart) ?? 0;
-        } else {
-          xx = (int.tryParse(msPart.padRight(3, '0').substring(0, 3)) ?? 0);
-        }
-      }
-      return Duration(minutes: mm, seconds: ss, milliseconds: xx);
+    final match = RegExp(
+      r'^(\d+):([0-5]\d)(?:[:.]([0-9]{1,3}))?$',
+    ).firstMatch(timeStr);
+    if (match == null) return null;
+
+    final minutes = int.tryParse(match.group(1)!);
+    final seconds = int.tryParse(match.group(2)!);
+    if (minutes == null || seconds == null) return null;
+
+    final fraction = match.group(3);
+    var milliseconds = 0;
+    if (fraction != null) {
+      milliseconds = switch (fraction.length) {
+        1 => int.parse(fraction) * 100,
+        2 => int.parse(fraction) * 10,
+        _ => int.parse(fraction),
+      };
     }
-    return null;
+    return Duration(
+      minutes: minutes,
+      seconds: seconds,
+      milliseconds: milliseconds,
+    );
   }
 
   @override

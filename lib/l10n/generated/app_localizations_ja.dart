@@ -53,6 +53,11 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String mediaOpenFailed(Object error) {
+    return 'メディアファイルを開けませんでした：$error';
+  }
+
+  @override
   String waveformAnalysisFailed(Object error) {
     return '波形の解析に失敗しました：$error';
   }
@@ -380,7 +385,7 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get blur => 'ブラー';
+  String get blur => 'ブラーレベル';
 
   @override
   String get screenSettings => '画面';
@@ -468,7 +473,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get paragraphsByBlankLine => '空行ごとに段落分け';
 
   @override
-  String get outputResolution => '出力解像度';
+  String get outputResolution => '字幕解像度';
 
   @override
   String get heightPixels => '高さ (px)';
@@ -477,7 +482,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get widthPixels => '幅 (px)';
 
   @override
-  String get resetSourceResolution => '元動画の解像度に戻す';
+  String get resetSourceResolution => '字幕解像度を元動画に合わせる';
 
   @override
   String secondsValue(Object value) {

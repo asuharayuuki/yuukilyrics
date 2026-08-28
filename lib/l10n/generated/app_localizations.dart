@@ -182,6 +182,12 @@ abstract class AppLocalizations {
   /// **'自動（{value} px）'**
   String automaticPixels(Object value);
 
+  /// No description provided for @mediaOpenFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'メディアファイルを開けませんでした：{error}'**
+  String mediaOpenFailed(Object error);
+
   /// No description provided for @waveformAnalysisFailed.
   ///
   /// In ja, this message translates to:
@@ -747,7 +753,7 @@ abstract class AppLocalizations {
   /// No description provided for @blur.
   ///
   /// In ja, this message translates to:
-  /// **'ブラー'**
+  /// **'ブラーレベル'**
   String get blur;
 
   /// No description provided for @screenSettings.
@@ -903,7 +909,7 @@ abstract class AppLocalizations {
   /// No description provided for @outputResolution.
   ///
   /// In ja, this message translates to:
-  /// **'出力解像度'**
+  /// **'字幕解像度'**
   String get outputResolution;
 
   /// No description provided for @heightPixels.
@@ -921,7 +927,7 @@ abstract class AppLocalizations {
   /// No description provided for @resetSourceResolution.
   ///
   /// In ja, this message translates to:
-  /// **'元動画の解像度に戻す'**
+  /// **'字幕解像度を元動画に合わせる'**
   String get resetSourceResolution;
 
   /// No description provided for @secondsValue.

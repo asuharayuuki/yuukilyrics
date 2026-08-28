@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/color_preset_asset.dart';
+import 'atomic_file_writer.dart';
 
 class ColorPresetLibraryService extends ChangeNotifier {
   static const markdownHeader = <String>[
@@ -200,10 +201,7 @@ class ColorPresetLibraryService extends ChangeNotifier {
 
   Future<void> _write() async {
     final file = File(await getFilePath());
-    final temporary = File('${file.path}.tmp');
-    await temporary.writeAsString(_serialize(_presets), flush: true);
-    if (await file.exists()) await file.delete();
-    await temporary.rename(file.path);
+    await AtomicFileWriter.writeString(file, _serialize(_presets));
   }
 
   List<String>? _splitRow(String source) {

@@ -51,6 +51,7 @@ class _MainScreenState extends State<MainScreen> {
   WaveformData? _waveformData;
   bool _isLoadingMedia = false;
   String? _mediaFilePath;
+  int _mediaLoadGeneration = 0;
 
   int _selectedPageIndex = 0;
 
@@ -100,26 +101,29 @@ class _MainScreenState extends State<MainScreen> {
           : kSupportedMediaExtensions,
     );
 
-    if (result != null && result.files.single.path != null) {
-      final path = result.files.single.path!;
+    if (result == null || result.files.single.path == null || !mounted) return;
+
+    final path = result.files.single.path!;
+    final generation = ++_mediaLoadGeneration;
+    setState(() => _isLoadingMedia = true);
+
+    try {
+      await _mediaPlayer.openMedia(path);
+      if (!mounted || generation != _mediaLoadGeneration) return;
 
       setState(() {
         _mediaFilePath = path;
-        _isLoadingMedia = true;
+        _waveformData = null;
       });
 
-      // Load into media player
-      await _mediaPlayer.openMedia(path);
-
-      // Extract waveform data
       WaveformData? waveData;
       try {
         waveData = await WaveformExtractorRouter.extractWaveform(path);
-      } catch (e) {
-        if (mounted) {
+      } catch (error) {
+        if (mounted && generation == _mediaLoadGeneration) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(context.l10n.waveformAnalysisFailed(e)),
+              content: Text(context.l10n.waveformAnalysisFailed(error)),
               backgroundColor: Colors.redAccent,
               duration: const Duration(seconds: 5),
             ),
@@ -127,10 +131,22 @@ class _MainScreenState extends State<MainScreen> {
         }
       }
 
-      setState(() {
-        _waveformData = waveData;
-        _isLoadingMedia = false;
-      });
+      if (!mounted || generation != _mediaLoadGeneration) return;
+      setState(() => _waveformData = waveData);
+    } catch (error) {
+      if (mounted && generation == _mediaLoadGeneration) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.l10n.mediaOpenFailed(error)),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted && generation == _mediaLoadGeneration) {
+        setState(() => _isLoadingMedia = false);
+      }
     }
   }
 

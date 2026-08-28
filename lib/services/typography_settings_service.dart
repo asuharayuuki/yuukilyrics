@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'atomic_file_writer.dart';
+
 class TypographySettingsData {
   final double fontSize;
   final int letterSpacingStep;
@@ -196,12 +198,9 @@ class TypographySettingsService {
   Future<void> save(TypographySettingsData settings) async {
     final path = await getFilePath();
     final destination = File(path);
-    final temporary = File('$path.tmp');
-    await temporary.writeAsString(
+    await AtomicFileWriter.writeString(
+      destination,
       const JsonEncoder.withIndent('  ').convert(settings.toJson()),
-      flush: true,
     );
-    if (await destination.exists()) await destination.delete();
-    await temporary.rename(path);
   }
 }

@@ -53,6 +53,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String mediaOpenFailed(Object error) {
+    return '媒体文件打开失败：$error';
+  }
+
+  @override
   String waveformAnalysisFailed(Object error) {
     return '波形分析失败：$error';
   }
@@ -380,7 +385,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get blur => '模糊';
+  String get blur => '模糊等级';
 
   @override
   String get screenSettings => '画面';
@@ -468,7 +473,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get paragraphsByBlankLine => '按空行分段';
 
   @override
-  String get outputResolution => '输出分辨率';
+  String get outputResolution => '字幕分辨率';
 
   @override
   String get heightPixels => '高度 (px)';
@@ -477,7 +482,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get widthPixels => '宽度 (px)';
 
   @override
-  String get resetSourceResolution => '恢复原视频分辨率';
+  String get resetSourceResolution => '将字幕分辨率设为原视频分辨率';
 
   @override
   String secondsValue(Object value) {

@@ -62,15 +62,30 @@ class LrcParser {
     int pipeIndex = content.indexOf('|');
 
     if (pipeIndex != -1) {
-      int? type = int.tryParse(content.substring(0, pipeIndex));
+      final typeText = content.substring(0, pipeIndex);
+      final type = RegExp(r'^\d+$').hasMatch(typeText)
+          ? int.tryParse(typeText)
+          : null;
       String time = content.substring(pipeIndex + 1);
+      if (type == null ||
+          (time.isNotEmpty && LyricTimeTag.parseDuration(time) == null)) {
+        return null;
+      }
       return _ParseResult(LyricTimeTag(type: type, time: time), end + 1);
     } else {
-      int? type = int.tryParse(content);
+      if (content.isEmpty) {
+        return _ParseResult(LyricTimeTag(time: ''), end + 1);
+      }
+      final type = RegExp(r'^\d+$').hasMatch(content)
+          ? int.tryParse(content)
+          : null;
       if (type != null) {
         return _ParseResult(LyricTimeTag(type: type, time: ''), end + 1);
       }
-      return _ParseResult(LyricTimeTag(time: content), end + 1);
+      if (LyricTimeTag.parseDuration(content) != null) {
+        return _ParseResult(LyricTimeTag(time: content), end + 1);
+      }
+      return null;
     }
   }
 
