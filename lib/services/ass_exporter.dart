@@ -724,8 +724,12 @@ class AssExporter {
       // Preserve enough tones for facial features and fine line art. This is
       // still bounded to keep the number of ASS dialogue layers manageable.
       final palette = _buildAvatarPalette(colorWeights, maxColors: 128);
+      final backingPalette = _buildAvatarPalette(colorWeights, maxColors: 16);
       final colorCache = <int, int>{};
+      final backingColorCache = <int, int>{};
       final pathsByColor = <int, StringBuffer>{};
+      final backingPathsByColor = <int, StringBuffer>{};
+      final silhouette = StringBuffer();
       for (var y = 0; y < image.height; y++) {
         var x = 0;
         while (x < image.width) {
@@ -753,9 +757,21 @@ class AssExporter {
             runEnd++;
           }
           if (key != 0) {
-            pathsByColor
-                .putIfAbsent(key, StringBuffer.new)
-                .write('m $x $y l $runEnd $y $runEnd ${y + 1} $x ${y + 1} ');
+            final rectangle =
+                'm $x $y l $runEnd $y $runEnd ${y + 1} $x ${y + 1} ';
+            silhouette.write(rectangle);
+            final backingKey = _adaptiveAvatarColorKey(
+              rgba.getUint8(offset),
+              rgba.getUint8(offset + 1),
+              rgba.getUint8(offset + 2),
+              255,
+              backingPalette,
+              backingColorCache,
+            );
+            backingPathsByColor
+                .putIfAbsent(backingKey, StringBuffer.new)
+                .write(rectangle);
+            pathsByColor.putIfAbsent(key, StringBuffer.new).write(rectangle);
           }
           x = runEnd;
         }
@@ -777,6 +793,49 @@ class AssExporter {
         );
       }
       layers.sort((a, b) => a.opacity.compareTo(b.opacity));
+      if (silhouette.isNotEmpty && colorWeights.isNotEmpty) {
+        // libass anti-aliases every independently coloured vector layer. At
+        // shared pixel boundaries that used to expose the video underneath,
+        // making an otherwise opaque avatar look grey and peppered with dark
+        // dots. Paint an opaque silhouette and a small local-colour backing
+        // palette first so only the avatar's outer edge can blend with the
+        // video while dark clothing, skin, and hair keep their own base tones.
+        var totalWeight = 0;
+        var weightedRed = 0;
+        var weightedGreen = 0;
+        var weightedBlue = 0;
+        for (final entry in colorWeights.entries) {
+          final weight = entry.value;
+          totalWeight += weight;
+          weightedRed += ((entry.key >> 16) & 0xFF) * weight;
+          weightedGreen += ((entry.key >> 8) & 0xFF) * weight;
+          weightedBlue += (entry.key & 0xFF) * weight;
+        }
+        final backingLayers = <_AssAvatarLayer>[
+          _AssAvatarLayer(
+            color: Color.fromARGB(
+              255,
+              (weightedRed / totalWeight).round(),
+              (weightedGreen / totalWeight).round(),
+              (weightedBlue / totalWeight).round(),
+            ),
+            opacity: 255,
+            drawing: silhouette.toString().trimRight(),
+          ),
+          for (final entry in backingPathsByColor.entries)
+            _AssAvatarLayer(
+              color: Color.fromARGB(
+                255,
+                (entry.key >> 16) & 0xFF,
+                (entry.key >> 8) & 0xFF,
+                entry.key & 0xFF,
+              ),
+              opacity: 255,
+              drawing: entry.value.toString().trimRight(),
+            ),
+        ];
+        layers.insertAll(0, backingLayers);
+      }
 
       // Keep the ASS drawing scale integral. Fractional scaling would place
       // cell boundaries between output pixels and make libass anti-alias them.
