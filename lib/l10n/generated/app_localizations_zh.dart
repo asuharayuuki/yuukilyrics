@@ -563,6 +563,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get singerColorImport => '导入歌手配色';
 
   @override
+  String get currentSingerColorMarkdown => '当前歌手配色 Markdown 源代码';
+
+  @override
+  String get sourceCode => '源代码';
+
+  @override
+  String currentSingerColorMarkdownApplied(Object count) {
+    return '已应用 $count 名歌手的 Markdown 配色';
+  }
+
+  @override
   String get importN3Project => '导入 N3 工程';
 
   @override
@@ -649,6 +660,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get unsungDecorationColor => '未演唱装饰颜色';
+
+  @override
+  String get copy => '复制';
+
+  @override
+  String get copiedToClipboard => '已复制到剪贴板';
 
   @override
   String get paste => '粘贴';

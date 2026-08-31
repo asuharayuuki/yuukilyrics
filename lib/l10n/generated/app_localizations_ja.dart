@@ -563,6 +563,17 @@ class AppLocalizationsJa extends AppLocalizations {
   String get singerColorImport => '歌手配色インポート';
 
   @override
+  String get currentSingerColorMarkdown => '現在の歌手配色 Markdown ソース';
+
+  @override
+  String get sourceCode => 'ソース';
+
+  @override
+  String currentSingerColorMarkdownApplied(Object count) {
+    return '$count 名の歌手に Markdown 配色を適用しました';
+  }
+
+  @override
   String get importN3Project => 'N3 プロジェクトを読み込む';
 
   @override
@@ -649,6 +660,12 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get unsungDecorationColor => '未歌唱飾り色';
+
+  @override
+  String get copy => 'コピー';
+
+  @override
+  String get copiedToClipboard => 'クリップボードにコピーしました';
 
   @override
   String get paste => '貼り付け';

@@ -1062,6 +1062,24 @@ abstract class AppLocalizations {
   /// **'歌手配色インポート'**
   String get singerColorImport;
 
+  /// No description provided for @currentSingerColorMarkdown.
+  ///
+  /// In ja, this message translates to:
+  /// **'現在の歌手配色 Markdown ソース'**
+  String get currentSingerColorMarkdown;
+
+  /// No description provided for @sourceCode.
+  ///
+  /// In ja, this message translates to:
+  /// **'ソース'**
+  String get sourceCode;
+
+  /// No description provided for @currentSingerColorMarkdownApplied.
+  ///
+  /// In ja, this message translates to:
+  /// **'{count} 名の歌手に Markdown 配色を適用しました'**
+  String currentSingerColorMarkdownApplied(Object count);
+
   /// No description provided for @importN3Project.
   ///
   /// In ja, this message translates to:
@@ -1188,6 +1206,18 @@ abstract class AppLocalizations {
   /// In ja, this message translates to:
   /// **'未歌唱飾り色'**
   String get unsungDecorationColor;
+
+  /// No description provided for @copy.
+  ///
+  /// In ja, this message translates to:
+  /// **'コピー'**
+  String get copy;
+
+  /// No description provided for @copiedToClipboard.
+  ///
+  /// In ja, this message translates to:
+  /// **'クリップボードにコピーしました'**
+  String get copiedToClipboard;
 
   /// No description provided for @paste.
   ///

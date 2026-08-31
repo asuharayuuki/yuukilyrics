@@ -21,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart'
     show
         Clipboard,
+        ClipboardData,
         FilteringTextInputFormatter,
         FontLoader,
         LengthLimitingTextInputFormatter;
@@ -962,10 +963,23 @@ class _AssExportScreenState extends State<AssExportScreen> {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: FilledButton.tonalIcon(
-                onPressed: _addSingerColor,
-                icon: const Icon(Icons.add),
-                label: Text(context.l10n.addSinger),
+              child: OutlinedButton.icon(
+                onPressed: _showCurrentSingerColorMarkdownDialog,
+                icon: const Icon(Icons.code),
+                label: Text(context.l10n.sourceCode),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filledTonal(
+              onPressed: _addSingerColor,
+              icon: const Icon(Icons.add),
+              tooltip: context.l10n.addSinger,
+              style: IconButton.styleFrom(
+                fixedSize: const Size.square(32),
+                minimumSize: const Size.square(32),
+                maximumSize: const Size.square(32),
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
           ],
@@ -1426,6 +1440,72 @@ class _AssExportScreenState extends State<AssExportScreen> {
       _singerControllers.add(TextEditingController(text: ''));
     });
     _publishActiveColorPresets();
+  }
+
+  String _serializeCurrentSingerColors() {
+    final header = <String>[
+      context.l10n.singerName,
+      context.l10n.sungTextColor,
+      context.l10n.sungOutlineColor,
+      context.l10n.sungDecorationColor,
+      context.l10n.unsungTextColor,
+      context.l10n.unsungOutlineColor,
+      context.l10n.unsungDecorationColor,
+    ];
+    final rows = _singerColors.map((singer) {
+      final fields = _colorPresetFromSinger(
+        singer.prefix.trim(),
+        singer,
+      ).toMarkdownFields();
+      fields[0] = fields[0]
+          .replaceAll('|', '｜')
+          .replaceAll(RegExp(r'[\r\n]+'), ' ');
+      return '| ${fields.join(' | ')} |';
+    });
+    return [
+      '| ${header.join(' | ')} |',
+      '| ${List.filled(header.length, '---').join(' | ')} |',
+      ...rows,
+    ].join('\n');
+  }
+
+  Future<void> _showCurrentSingerColorMarkdownDialog() async {
+    final result = await showDialog<_SingerColorImportParseResult>(
+      context: context,
+      builder: (context) => _SingerColorImportDialog(
+        initialText: _serializeCurrentSingerColors(),
+        title: context.l10n.currentSingerColorMarkdown,
+        titleIcon: Icons.code,
+        confirmLabel: context.l10n.apply,
+        requireAllRowsValid: true,
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    for (final controller in _singerControllers) {
+      controller.dispose();
+    }
+    setState(() {
+      _singerColors
+        ..clear()
+        ..addAll(result.singers);
+      _singerControllers
+        ..clear()
+        ..addAll(
+          result.singers.map(
+            (singer) => TextEditingController(text: singer.prefix),
+          ),
+        );
+    });
+    _publishActiveColorPresets();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          context.l10n.currentSingerColorMarkdownApplied(result.singers.length),
+        ),
+      ),
+    );
   }
 
   Future<void> _showSavedColorPresetsDialog() async {
@@ -2747,8 +2827,18 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
 class _SingerColorImportDialog extends StatefulWidget {
   final String initialText;
+  final String? title;
+  final IconData titleIcon;
+  final String? confirmLabel;
+  final bool requireAllRowsValid;
 
-  const _SingerColorImportDialog({required this.initialText});
+  const _SingerColorImportDialog({
+    required this.initialText,
+    this.title,
+    this.titleIcon = Icons.upload_file,
+    this.confirmLabel,
+    this.requireAllRowsValid = false,
+  });
 
   @override
   State<_SingerColorImportDialog> createState() =>
@@ -2803,6 +2893,14 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
     );
   }
 
+  Future<void> _copyText() async {
+    await Clipboard.setData(ClipboardData(text: _textController.text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(context.l10n.copiedToClipboard)));
+  }
+
   Future<void> _openOnlineColorEditor() async {
     try {
       final opened = await launchUrl(
@@ -2827,13 +2925,16 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
     final statusColor = _parseResult.errors.isEmpty
         ? theme.colorScheme.primary
         : theme.colorScheme.error;
+    final canSubmit =
+        _parseResult.singers.isNotEmpty &&
+        (!widget.requireAllRowsValid || _parseResult.errors.isEmpty);
 
     return AlertDialog(
       title: Row(
         children: [
-          const Icon(Icons.upload_file),
+          Icon(widget.titleIcon),
           const SizedBox(width: 10),
-          Text(context.l10n.singerColorImport),
+          Expanded(child: Text(widget.title ?? context.l10n.singerColorImport)),
         ],
       ),
       content: ConstrainedBox(
@@ -2848,6 +2949,11 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  OutlinedButton.icon(
+                    onPressed: _copyText,
+                    icon: const Icon(Icons.content_copy, size: 18),
+                    label: Text(context.l10n.copy),
+                  ),
                   OutlinedButton.icon(
                     onPressed: _pasteText,
                     icon: const Icon(Icons.content_paste, size: 18),
@@ -2935,11 +3041,11 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
           child: Text(context.l10n.cancel),
         ),
         FilledButton.icon(
-          onPressed: _parseResult.singers.isEmpty
-              ? null
-              : () => Navigator.pop(context, _parseResult),
+          onPressed: canSubmit
+              ? () => Navigator.pop(context, _parseResult)
+              : null,
           icon: const Icon(Icons.download_done, size: 18),
-          label: Text(context.l10n.importValidRows),
+          label: Text(widget.confirmLabel ?? context.l10n.importValidRows),
         ),
       ],
     );
