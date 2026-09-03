@@ -42,8 +42,7 @@ void main(List<String> arguments) {
   }
 
   final version = '${date.year}.${date.month}.${date.day}';
-  final tag =
-      'v${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
+  final tag = 'v$version';
 
   final edits = <_FileEdit>[
     _FileEdit('pubspec.yaml', [
