@@ -64,8 +64,9 @@ class _ToolbarAreaState extends State<ToolbarArea> {
   }
 
   void _onRubyChanged(String value) {
-    final composing = _rubyCtrl.value.composing;
-    if (composing.isValid && !composing.isCollapsed) return;
+    // Keep the AST in sync during IME composition as well. Some input methods
+    // commit by only clearing the composing range, which does not trigger a
+    // second onChanged callback when the text itself stays the same.
     widget.lyricsState.updateRubyText(value);
   }
 

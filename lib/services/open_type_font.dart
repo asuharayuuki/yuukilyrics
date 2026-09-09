@@ -32,13 +32,11 @@ class OpenTypeFontFaceInfo {
   }
 
   String get assFontName {
-    final normalized = subfamilyName.toLowerCase();
-    if (normalized == 'regular' ||
-        normalized == 'normal' ||
-        normalized == 'roman') {
-      return familyName;
-    }
-    return fullName.isNotEmpty ? fullName : familyName;
+    // ASS Fontname is a font family. Weight and slant are selected through the
+    // Bold and Italic style fields; including a subfamily such as "Bold" here
+    // makes libass look for a non-existent family and fall back to another font.
+    if (familyName.trim().isNotEmpty) return familyName;
+    return fullName.isNotEmpty ? fullName : postScriptName;
   }
 }
 

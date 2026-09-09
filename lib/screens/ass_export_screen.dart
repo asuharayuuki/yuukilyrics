@@ -494,6 +494,11 @@ class AssExportPageState {
   int? _baselineResolutionHeight;
 
   TypographySettingsData get _typographySettings => TypographySettingsData(
+    fontName: _fontName,
+    customFontPath: _customFontPath,
+    fontFaceIndex: _fontFaceIndex,
+    fontDisplayName: _fontDisplayName,
+    fontStyleName: _fontStyleName,
     fontSize: _fontSize,
     letterSpacingStep: _letterSpacingStep,
     decorationWidth: _outlineWidth,
@@ -529,6 +534,11 @@ class AssExportPageState {
   }
 
   void _setTypographySettings(TypographySettingsData settings) {
+    _fontName = settings.fontName;
+    _customFontPath = settings.customFontPath;
+    _fontFaceIndex = settings.fontFaceIndex;
+    _fontDisplayName = settings.fontDisplayName;
+    _fontStyleName = settings.fontStyleName;
     _fontSize = settings.fontSize;
     _letterSpacingStep = settings.letterSpacingStep;
     _outlineWidth = settings.decorationWidth;
@@ -540,6 +550,22 @@ class AssExportPageState {
     _lyricsBottomMargin = settings.lyricsBottomMargin;
     _singerAvatarSize = settings.singerAvatarSize;
     _singerAvatarGap = settings.singerAvatarGap;
+  }
+
+  void applyFontSelection({
+    required String fontName,
+    required String? customFontPath,
+    required int fontFaceIndex,
+    required String fontDisplayName,
+    required String fontStyleName,
+  }) {
+    _typographyRevision++;
+    _fontName = fontName;
+    _customFontPath = customFontPath;
+    _fontFaceIndex = fontFaceIndex;
+    _fontDisplayName = fontDisplayName;
+    _fontStyleName = fontStyleName;
+    unawaited(_saveTypographySettings(_typographySettings));
   }
 
   Future<void> _saveTypographySettings(TypographySettingsData settings) async {
@@ -694,15 +720,10 @@ class _AssExportScreenState extends State<AssExportScreen> {
   final Set<String> _loadedPreviewFonts = {};
 
   String? get _customFontPath => _pageState._customFontPath;
-  set _customFontPath(String? value) => _pageState._customFontPath = value;
   String get _fontName => _pageState._fontName;
-  set _fontName(String value) => _pageState._fontName = value;
   String get _fontDisplayName => _pageState._fontDisplayName;
-  set _fontDisplayName(String value) => _pageState._fontDisplayName = value;
   String get _fontStyleName => _pageState._fontStyleName;
-  set _fontStyleName(String value) => _pageState._fontStyleName = value;
   int get _fontFaceIndex => _pageState._fontFaceIndex;
-  set _fontFaceIndex(int value) => _pageState._fontFaceIndex = value;
   bool get _isBold => _pageState._isBold;
   set _isBold(bool value) => _pageState._isBold = value;
   List<SingerColorInfo> get _singerColors => _pageState._singerColors;
@@ -781,7 +802,19 @@ class _AssExportScreenState extends State<AssExportScreen> {
     _resolutionController.addListener(_onResolutionTextChanged);
     widget.fontLibrary.addListener(_handleFontLibraryChanged);
     widget.fontLibrary.refresh();
+    unawaited(_loadPersistedPreviewFont());
     _initVideoResolution();
+  }
+
+  Future<void> _loadPersistedPreviewFont() async {
+    final path = _customFontPath;
+    if (path == null) return;
+    try {
+      await _loadPreviewFont(path, _fontName, _fontFaceIndex);
+      if (mounted) setState(() {});
+    } catch (error) {
+      debugPrint('Failed to load persisted preview font: $error');
+    }
   }
 
   @override
@@ -2342,6 +2375,11 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
     _pageState.applyTypographySettings(
       TypographySettingsData(
+        fontName: _fontName,
+        customFontPath: _customFontPath,
+        fontFaceIndex: _fontFaceIndex,
+        fontDisplayName: _fontDisplayName,
+        fontStyleName: _fontStyleName,
         fontSize: result.fontSize,
         letterSpacingStep: result.letterSpacingStep,
         decorationWidth: result.decorationWidth,
@@ -2649,11 +2687,13 @@ class _AssExportScreenState extends State<AssExportScreen> {
       await _loadPreviewFont(asset.path, face.assFontName, face.index);
       if (!mounted) return;
       setState(() {
-        _customFontPath = asset.path;
-        _fontFaceIndex = face.index;
-        _fontName = face.assFontName;
-        _fontDisplayName = _fontFamilyLabel(face);
-        _fontStyleName = _fontStyleLabel(face);
+        _pageState.applyFontSelection(
+          customFontPath: asset.path,
+          fontFaceIndex: face.index,
+          fontName: face.assFontName,
+          fontDisplayName: _fontFamilyLabel(face),
+          fontStyleName: _fontStyleLabel(face),
+        );
       });
     } catch (error) {
       if (!mounted) return;
@@ -2665,11 +2705,13 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
   void _selectBundledFont() {
     setState(() {
-      _customFontPath = null;
-      _fontFaceIndex = 0;
-      _fontName = FontService.bundledFontFamily;
-      _fontDisplayName = FontService.bundledFontFamily;
-      _fontStyleName = 'Regular';
+      _pageState.applyFontSelection(
+        customFontPath: null,
+        fontFaceIndex: 0,
+        fontName: FontService.bundledFontFamily,
+        fontDisplayName: FontService.bundledFontFamily,
+        fontStyleName: 'Regular',
+      );
     });
   }
 

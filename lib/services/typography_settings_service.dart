@@ -7,6 +7,11 @@ import 'package:path_provider/path_provider.dart';
 import 'atomic_file_writer.dart';
 
 class TypographySettingsData {
+  final String fontName;
+  final String? customFontPath;
+  final int fontFaceIndex;
+  final String fontDisplayName;
+  final String fontStyleName;
   final double fontSize;
   final int letterSpacingStep;
   final double decorationWidth;
@@ -20,6 +25,11 @@ class TypographySettingsData {
   final double singerAvatarGap;
 
   const TypographySettingsData({
+    required this.fontName,
+    required this.customFontPath,
+    required this.fontFaceIndex,
+    required this.fontDisplayName,
+    required this.fontStyleName,
     required this.fontSize,
     required this.letterSpacingStep,
     required this.decorationWidth,
@@ -38,6 +48,25 @@ class TypographySettingsData {
     required TypographySettingsData fallback,
   }) {
     return TypographySettingsData(
+      fontName: _readString(json, 'fontName', fallback.fontName),
+      customFontPath: _readOptionalString(
+        json,
+        'customFontPath',
+        fallback.customFontPath,
+      ),
+      fontFaceIndex: _readInt(
+        json,
+        'fontFaceIndex',
+        fallback.fontFaceIndex,
+        0,
+        65535,
+      ),
+      fontDisplayName: _readString(
+        json,
+        'fontDisplayName',
+        fallback.fontDisplayName,
+      ),
+      fontStyleName: _readString(json, 'fontStyleName', fallback.fontStyleName),
       fontSize: _readDouble(json, 'fontSize', fallback.fontSize, 20, 200),
       letterSpacingStep: _readInt(
         json,
@@ -113,7 +142,12 @@ class TypographySettingsData {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 1,
+    'version': 2,
+    'fontName': fontName,
+    'customFontPath': customFontPath,
+    'fontFaceIndex': fontFaceIndex,
+    'fontDisplayName': fontDisplayName,
+    'fontStyleName': fontStyleName,
     'fontSize': fontSize,
     'letterSpacingStep': letterSpacingStep,
     'decorationWidth': decorationWidth,
@@ -126,6 +160,26 @@ class TypographySettingsData {
     'singerAvatarSize': singerAvatarSize,
     'singerAvatarGap': singerAvatarGap,
   };
+
+  static String _readString(
+    Map<String, dynamic> json,
+    String key,
+    String fallback,
+  ) {
+    final value = json[key];
+    return value is String && value.trim().isNotEmpty ? value : fallback;
+  }
+
+  static String? _readOptionalString(
+    Map<String, dynamic> json,
+    String key,
+    String? fallback,
+  ) {
+    if (!json.containsKey(key)) return fallback;
+    final value = json[key];
+    if (value == null) return null;
+    return value is String && value.trim().isNotEmpty ? value : fallback;
+  }
 
   static double _readDouble(
     Map<String, dynamic> json,
