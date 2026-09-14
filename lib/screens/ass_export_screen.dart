@@ -206,24 +206,29 @@ class SingerColorInfo {
 @immutable
 class _SingerColorImportParseResult {
   final List<SingerColorInfo> singers;
+  final SingerColorInfo? defaultColors;
   final int validLineCount;
   final List<String> errors;
 
   const _SingerColorImportParseResult({
     required this.singers,
+    this.defaultColors,
     required this.validLineCount,
     required this.errors,
   });
 
-  int get duplicateCount => validLineCount - singers.length;
+  int get duplicateCount =>
+      validLineCount - singers.length - (defaultColors == null ? 0 : 1);
 }
 
 _SingerColorImportParseResult _parseSingerColorText(
   String source,
   AppLocalizations l10n,
+  String? defaultColorsName,
 ) {
   final singersByName = <String, SingerColorInfo>{};
   final errors = <String>[];
+  SingerColorInfo? defaultColors;
   var validLineCount = 0;
   final lines = source.replaceFirst('\uFEFF', '').split(RegExp(r'\r?\n'));
 
@@ -283,7 +288,7 @@ _SingerColorImportParseResult _parseSingerColorText(
     }
 
     validLineCount++;
-    singersByName[singerName] = SingerColorInfo(
+    final singer = SingerColorInfo(
       prefix: singerName,
       preset: SingerColorPreset.none,
       sungTextColor: colors[0],
@@ -293,10 +298,16 @@ _SingerColorImportParseResult _parseSingerColorText(
       unsungOutlineColor: colors[4],
       unsungDecorationColor: colors[5],
     );
+    if (defaultColorsName != null && singerName == defaultColorsName) {
+      defaultColors = singer;
+    } else {
+      singersByName[singerName] = singer;
+    }
   }
 
   return _SingerColorImportParseResult(
     singers: singersByName.values.toList(),
+    defaultColors: defaultColors,
     validLineCount: validLineCount,
     errors: errors,
   );
@@ -1485,7 +1496,17 @@ class _AssExportScreenState extends State<AssExportScreen> {
       context.l10n.unsungOutlineColor,
       context.l10n.unsungDecorationColor,
     ];
-    final rows = _singerColors.map((singer) {
+    final defaultColors = SingerColorInfo(
+      prefix: context.l10n.defaultColors,
+      preset: _defaultColorPreset,
+      sungTextColor: _sungTextColor,
+      sungOutlineColor: _sungOutlineColor,
+      sungDecorationColor: _sungDecorationColor,
+      unsungTextColor: _unsungTextColor,
+      unsungOutlineColor: _unsungOutlineColor,
+      unsungDecorationColor: _unsungDecorationColor,
+    );
+    final rows = [defaultColors, ..._singerColors].map((singer) {
       final fields = _colorPresetFromSinger(
         singer.prefix.trim(),
         singer,
@@ -1511,6 +1532,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
         titleIcon: Icons.code,
         confirmLabel: context.l10n.apply,
         requireAllRowsValid: true,
+        defaultColorsName: context.l10n.defaultColors,
       ),
     );
     if (result == null || !mounted) return;
@@ -1519,6 +1541,16 @@ class _AssExportScreenState extends State<AssExportScreen> {
       controller.dispose();
     }
     setState(() {
+      final defaultColors = result.defaultColors;
+      if (defaultColors != null) {
+        _defaultColorPreset = SingerColorPreset.none;
+        _sungTextColor = defaultColors.sungTextColor;
+        _sungOutlineColor = defaultColors.sungOutlineColor;
+        _sungDecorationColor = defaultColors.sungDecorationColor;
+        _unsungTextColor = defaultColors.unsungTextColor;
+        _unsungOutlineColor = defaultColors.unsungOutlineColor;
+        _unsungDecorationColor = defaultColors.unsungDecorationColor;
+      }
       _singerColors
         ..clear()
         ..addAll(result.singers);
@@ -2873,6 +2905,7 @@ class _SingerColorImportDialog extends StatefulWidget {
   final IconData titleIcon;
   final String? confirmLabel;
   final bool requireAllRowsValid;
+  final String? defaultColorsName;
 
   const _SingerColorImportDialog({
     required this.initialText,
@@ -2880,6 +2913,7 @@ class _SingerColorImportDialog extends StatefulWidget {
     this.titleIcon = Icons.upload_file,
     this.confirmLabel,
     this.requireAllRowsValid = false,
+    this.defaultColorsName,
   });
 
   @override
@@ -2910,7 +2944,11 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _parseResult = _parseSingerColorText(_textController.text, context.l10n);
+    _parseResult = _parseSingerColorText(
+      _textController.text,
+      context.l10n,
+      widget.defaultColorsName,
+    );
   }
 
   @override
@@ -2922,7 +2960,11 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
 
   void _parseInput() {
     setState(() {
-      _parseResult = _parseSingerColorText(_textController.text, context.l10n);
+      _parseResult = _parseSingerColorText(
+        _textController.text,
+        context.l10n,
+        widget.defaultColorsName,
+      );
     });
   }
 
@@ -2968,7 +3010,8 @@ class _SingerColorImportDialogState extends State<_SingerColorImportDialog> {
         ? theme.colorScheme.primary
         : theme.colorScheme.error;
     final canSubmit =
-        _parseResult.singers.isNotEmpty &&
+        (_parseResult.singers.isNotEmpty ||
+            _parseResult.defaultColors != null) &&
         (!widget.requireAllRowsValid || _parseResult.errors.isEmpty);
 
     return AlertDialog(

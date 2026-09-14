@@ -80,26 +80,24 @@ class SavedColorPresetsScreen extends StatelessWidget {
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Column(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
                             _buildImportAction(
                               context,
+                              key: const ValueKey('import-color-presets'),
+                              icon: Icons.playlist_add,
                               title: context.l10n.importSavedColorPresets,
                               description: context
                                   .l10n
                                   .importSavedColorPresetsDescription,
                               onTap: onImport,
                             ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Divider(
-                                height: 1,
-                                color: theme.colorScheme.outlineVariant
-                                    .withValues(alpha: 0.4),
-                              ),
-                            ),
                             _buildImportAction(
                               context,
+                              key: const ValueKey('import-n3-project'),
+                              icon: Icons.folder_open_outlined,
                               title: context.l10n.importN3Project,
                               description:
                                   context.l10n.importN3ProjectDescription,
@@ -196,49 +194,22 @@ class SavedColorPresetsScreen extends StatelessWidget {
 
   Widget _buildImportAction(
     BuildContext context, {
+    required Key key,
+    required IconData icon,
     required String title,
     required String description,
     required VoidCallback onTap,
   }) {
-    final theme = Theme.of(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      description,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
+    return Tooltip(
+      message: description,
+      child: OutlinedButton.icon(
+        key: key,
+        onPressed: onTap,
+        icon: Icon(icon, size: 18),
+        label: Text(title),
+        style: OutlinedButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
       ),
     );

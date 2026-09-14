@@ -1,0 +1,60 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:yuukilyrics/l10n/generated/app_localizations.dart';
+import 'package:yuukilyrics/services/color_preset_library_service.dart';
+import 'package:yuukilyrics/widgets/saved_color_presets_dialog.dart';
+
+void main() {
+  testWidgets('import actions use compact buttons', (tester) async {
+    final library = ColorPresetLibraryService();
+    addTearDown(library.dispose);
+    var textImportCount = 0;
+    var n3ImportCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SavedColorPresetsScreen(
+          library: library,
+          onAdd: (_) async {},
+          onEdit: (_) async {},
+          onRename: (_, _) async => true,
+          onDelete: (_) async {},
+          onImport: () async => textImportCount++,
+          onImportN3: () async => n3ImportCount++,
+        ),
+      ),
+    );
+
+    final textImport = find.byKey(const ValueKey('import-color-presets'));
+    final n3Import = find.byKey(const ValueKey('import-n3-project'));
+    expect(tester.getSize(textImport).height, lessThanOrEqualTo(48));
+    expect(tester.getSize(n3Import).height, lessThanOrEqualTo(48));
+    expect(tester.getSize(textImport).width, lessThan(220));
+    expect(tester.getSize(n3Import).width, lessThan(220));
+
+    final importCard = tester.widget<Card>(
+      find.ancestor(of: textImport, matching: find.byType(Card)),
+    );
+    final context = tester.element(textImport);
+    expect(importCard.elevation, 0);
+    expect(importCard.color, Theme.of(context).colorScheme.surfaceContainerLow);
+    expect(
+      (importCard.shape! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(24),
+    );
+
+    await tester.tap(textImport);
+    await tester.tap(n3Import);
+    expect(textImportCount, 1);
+    expect(n3ImportCount, 1);
+  });
+}

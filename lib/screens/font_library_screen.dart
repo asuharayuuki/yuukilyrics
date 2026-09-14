@@ -8,10 +8,9 @@ import '../services/font_library_service.dart';
 import '../widgets/font_face_preview_text.dart';
 
 class FontLibraryScreen extends StatefulWidget {
-  final Widget? drawer;
   final FontLibraryService library;
 
-  const FontLibraryScreen({super.key, this.drawer, required this.library});
+  const FontLibraryScreen({super.key, required this.library});
 
   @override
   State<FontLibraryScreen> createState() => _FontLibraryScreenState();
@@ -168,17 +167,7 @@ class _FontLibraryScreenState extends State<FontLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: widget.drawer,
       appBar: AppBar(
-        leading: widget.drawer == null
-            ? null
-            : Builder(
-                builder: (context) => IconButton(
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                  icon: const Icon(Icons.menu),
-                  tooltip: context.l10n.openNavigationMenu,
-                ),
-              ),
         title: Text(context.l10n.fontLibrary),
         actions: [
           IconButton(

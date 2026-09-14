@@ -882,7 +882,7 @@ class _MainScreenState extends State<MainScreen> {
     return NavigationDrawer(
       selectedIndex: _selectedPageIndex,
       onDestinationSelected: (int index) async {
-        if (index == 4) {
+        if (index == 3) {
           Navigator.pop(context); // close drawer
           _showAboutDialog(context);
         } else {
@@ -916,10 +916,6 @@ class _MainScreenState extends State<MainScreen> {
           icon: const Icon(Icons.photo_library_outlined),
           label: Text(context.l10n.assetLibrary),
         ),
-        NavigationDrawerDestination(
-          icon: const Icon(Icons.font_download_outlined),
-          label: Text(context.l10n.fontLibrary),
-        ),
         const Divider(),
         NavigationDrawerDestination(
           icon: const Icon(Icons.info_outline),
@@ -945,7 +941,7 @@ class _MainScreenState extends State<MainScreen> {
           fontLibrary: _fontLibrary,
           colorPresetLibrary: _colorPresetLibrary,
           pageState: _assExportPageState,
-          onManageFonts: () => setState(() => _selectedPageIndex = 3),
+          onManageFonts: _openFontLibrary,
           onExport: _onExport,
           onExportVideo: _onExportVideo,
         ),
@@ -953,12 +949,16 @@ class _MainScreenState extends State<MainScreen> {
           drawer: _buildDrawer(context),
           library: _avatarLibrary,
         ),
-        3 => FontLibraryScreen(
-          drawer: _buildDrawer(context),
-          library: _fontLibrary,
-        ),
         _ => _buildTimingScreen(context),
       },
+    );
+  }
+
+  void _openFontLibrary() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => FontLibraryScreen(library: _fontLibrary),
+      ),
     );
   }
 
