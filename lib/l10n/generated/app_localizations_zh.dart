@@ -63,6 +63,17 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String lyricsOpenFailed(Object error) {
+    return '歌词文件打开失败：$error';
+  }
+
+  @override
+  String get dropMediaOrLyricsHere => '将媒体或歌词文件拖放到此处';
+
+  @override
+  String get unsupportedDroppedFiles => '没有可导入的媒体或歌词文件。';
+
+  @override
   String get exportFile => '导出文件';
 
   @override

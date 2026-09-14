@@ -194,6 +194,24 @@ abstract class AppLocalizations {
   /// **'波形の解析に失敗しました：{error}'**
   String waveformAnalysisFailed(Object error);
 
+  /// No description provided for @lyricsOpenFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'歌詞ファイルを開けませんでした：{error}'**
+  String lyricsOpenFailed(Object error);
+
+  /// No description provided for @dropMediaOrLyricsHere.
+  ///
+  /// In ja, this message translates to:
+  /// **'メディアまたは歌詞ファイルをここにドロップ'**
+  String get dropMediaOrLyricsHere;
+
+  /// No description provided for @unsupportedDroppedFiles.
+  ///
+  /// In ja, this message translates to:
+  /// **'読み込めるメディアまたは歌詞ファイルがありません。'**
+  String get unsupportedDroppedFiles;
+
   /// No description provided for @exportFile.
   ///
   /// In ja, this message translates to:

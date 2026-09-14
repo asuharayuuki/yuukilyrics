@@ -1,6 +1,8 @@
 import '../utils/constants.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 import '../services/ffmpeg_service.dart';
 import '../services/font_service.dart';
 import '../widgets/timeline_waveform.dart';
@@ -14,6 +16,7 @@ import '../services/lyrics_state_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -50,7 +53,9 @@ class _MainScreenState extends State<MainScreen> {
   final PageStorageBucket _pageStorageBucket = PageStorageBucket();
   WaveformData? _waveformData;
   bool _isLoadingMedia = false;
+  bool _isDraggingFiles = false;
   String? _mediaFilePath;
+  Uint8List? _mediaSecurityScopedBookmark;
   int _mediaLoadGeneration = 0;
 
   int _selectedPageIndex = 0;
@@ -76,6 +81,14 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    final bookmark = _mediaSecurityScopedBookmark;
+    if (bookmark != null) {
+      unawaited(
+        DesktopDrop.instance.stopAccessingSecurityScopedResource(
+          bookmark: bookmark,
+        ),
+      );
+    }
     _mediaPlayer.dispose();
     _lyricsState.dispose();
     _avatarLibrary.dispose();
@@ -102,19 +115,47 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     if (result == null || result.files.single.path == null || !mounted) return;
+    await _loadMediaPath(result.files.single.path!);
+  }
 
-    final path = result.files.single.path!;
+  Future<void> _loadMediaPath(
+    String path, {
+    Uint8List? securityScopedBookmark,
+  }) async {
+    var scopedAccessStarted = false;
     final generation = ++_mediaLoadGeneration;
     setState(() => _isLoadingMedia = true);
 
     try {
+      if (Platform.isMacOS && securityScopedBookmark != null) {
+        scopedAccessStarted = await DesktopDrop.instance
+            .startAccessingSecurityScopedResource(
+              bookmark: securityScopedBookmark,
+            );
+      }
+      if (!mounted || generation != _mediaLoadGeneration) return;
+
       await _mediaPlayer.openMedia(path);
       if (!mounted || generation != _mediaLoadGeneration) return;
+
+      final previousBookmark = _mediaSecurityScopedBookmark;
 
       setState(() {
         _mediaFilePath = path;
         _waveformData = null;
+        _mediaSecurityScopedBookmark = scopedAccessStarted
+            ? securityScopedBookmark
+            : null;
       });
+
+      if (previousBookmark != null) {
+        unawaited(
+          DesktopDrop.instance.stopAccessingSecurityScopedResource(
+            bookmark: previousBookmark,
+          ),
+        );
+      }
+      scopedAccessStarted = false;
 
       WaveformData? waveData;
       try {
@@ -144,6 +185,13 @@ class _MainScreenState extends State<MainScreen> {
         );
       }
     } finally {
+      if (scopedAccessStarted && securityScopedBookmark != null) {
+        unawaited(
+          DesktopDrop.instance.stopAccessingSecurityScopedResource(
+            bookmark: securityScopedBookmark,
+          ),
+        );
+      }
       if (mounted && generation == _mediaLoadGeneration) {
         setState(() => _isLoadingMedia = false);
       }
@@ -158,13 +206,90 @@ class _MainScreenState extends State<MainScreen> {
       allowedExtensions:
           (Platform.isIOS || Platform.isMacOS || Platform.isAndroid)
           ? null
-          : ['lrc', 'txt'],
+          : kSupportedLyricsExtensions,
     );
 
     if (result != null && result.files.single.path != null) {
-      final path = result.files.single.path!;
+      await _loadLyricsPath(result.files.single.path!);
+    }
+  }
+
+  Future<void> _loadLyricsPath(
+    String path, {
+    Uint8List? securityScopedBookmark,
+  }) async {
+    var scopedAccessStarted = false;
+    try {
+      if (Platform.isMacOS && securityScopedBookmark != null) {
+        scopedAccessStarted = await DesktopDrop.instance
+            .startAccessingSecurityScopedResource(
+              bookmark: securityScopedBookmark,
+            );
+      }
       final text = await File(path).readAsString();
+      if (!mounted) return;
       _lyricsState.loadLrcText(text);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.l10n.lyricsOpenFailed(error)),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (scopedAccessStarted && securityScopedBookmark != null) {
+        unawaited(
+          DesktopDrop.instance.stopAccessingSecurityScopedResource(
+            bookmark: securityScopedBookmark,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleDroppedFiles(DropDoneDetails details) async {
+    if (_isDraggingFiles && mounted) {
+      setState(() => _isDraggingFiles = false);
+    }
+
+    DropItem? mediaFile;
+    DropItem? lyricsFile;
+    for (final item in details.files) {
+      if (item is DropItemDirectory) continue;
+      final extension = p
+          .extension(item.path)
+          .toLowerCase()
+          .replaceFirst('.', '');
+      if (mediaFile == null && kSupportedMediaExtensions.contains(extension)) {
+        mediaFile = item;
+      } else if (lyricsFile == null &&
+          kSupportedLyricsExtensions.contains(extension)) {
+        lyricsFile = item;
+      }
+    }
+
+    if (mediaFile == null && lyricsFile == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.unsupportedDroppedFiles)),
+        );
+      }
+      return;
+    }
+
+    if (lyricsFile != null) {
+      await _loadLyricsPath(
+        lyricsFile.path,
+        securityScopedBookmark: lyricsFile.extraAppleBookmark,
+      );
+    }
+    if (mediaFile != null && mounted) {
+      await _loadMediaPath(
+        mediaFile.path,
+        securityScopedBookmark: mediaFile.extraAppleBookmark,
+      );
     }
   }
 
@@ -929,7 +1054,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     // Keep inactive pages out of the Windows accessibility tree. Retaining
     // them in an IndexedStack can produce invalid AXTree reparent updates.
-    return PageStorage(
+    final content = PageStorage(
       bucket: _pageStorageBucket,
       child: switch (_selectedPageIndex) {
         0 => _buildTimingScreen(context),
@@ -951,6 +1076,63 @@ class _MainScreenState extends State<MainScreen> {
         ),
         _ => _buildTimingScreen(context),
       },
+    );
+
+    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
+      return content;
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    return DropTarget(
+      enable: ModalRoute.of(context)?.isCurrent ?? true,
+      onDragEntered: (_) {
+        if (!_isDraggingFiles) setState(() => _isDraggingFiles = true);
+      },
+      onDragExited: (_) {
+        if (_isDraggingFiles) setState(() => _isDraggingFiles = false);
+      },
+      onDragDone: _handleDroppedFiles,
+      child: Stack(
+        children: [
+          content,
+          if (_isDraggingFiles)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  color: colorScheme.scrim.withValues(alpha: 0.58),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 24,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: colorScheme.primary),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.file_download_outlined,
+                            size: 48,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            context.l10n.dropMediaOrLyricsHere,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

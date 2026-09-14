@@ -63,6 +63,17 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String lyricsOpenFailed(Object error) {
+    return '歌詞ファイルを開けませんでした：$error';
+  }
+
+  @override
+  String get dropMediaOrLyricsHere => 'メディアまたは歌詞ファイルをここにドロップ';
+
+  @override
+  String get unsupportedDroppedFiles => '読み込めるメディアまたは歌詞ファイルがありません。';
+
+  @override
   String get exportFile => 'ファイルを出力';
 
   @override

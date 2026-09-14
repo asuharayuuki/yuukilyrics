@@ -5,3 +5,5 @@ const List<String> kSupportedMediaExtensions = [
 const List<String> kVideoExtensions = [
   'mp4', 'mkv', 'avi', 'mov', 'flv', 'webm', 'wmv', 'ts', 'm4v'
 ];
+
+const List<String> kSupportedLyricsExtensions = ['lrc', 'txt'];
