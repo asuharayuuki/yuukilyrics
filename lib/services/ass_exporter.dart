@@ -256,6 +256,7 @@ class AssExporter {
             LyricText('へ'),
             ruby('歌', 'うた', '00:03:10'),
             LyricText('う'),
+            if (settings.latinFont != null) LyricText(' ABC 123'),
             LyricTimeTag(time: '00:04:10'),
           ],
         ),
@@ -270,6 +271,8 @@ class AssExporter {
       fontName: settings.fontName,
       customFontPath: settings.customFontPath,
       fontFaceIndex: settings.fontFaceIndex,
+      latinFont: settings.latinFont,
+      fadeLyricLines: settings.fadeLyricLines,
       isBold: settings.isBold,
       singerColors: previewSingers,
       showSingerPrefixesInAss: false,
@@ -312,10 +315,24 @@ class AssExporter {
       fontFilePath: rawSettings.customFontPath,
       faceIndex: rawSettings.fontFaceIndex,
     );
+    final latinFont = rawSettings.latinFont;
+    final latinFontFace =
+        latinFont != null &&
+            (latinFont.path != rawSettings.customFontPath ||
+                latinFont.faceIndex != rawSettings.fontFaceIndex)
+        ? await FontService().loadSelectedFace(
+            fontFilePath: latinFont.path,
+            faceIndex: latinFont.faceIndex,
+          )
+        : null;
     AssExportSettings settings = AssExportSettings(
-      fontName: selectedFontFace.info.assFontName,
+      fontName: rawSettings.customFontPath == null
+          ? selectedFontFace.info.assFontName
+          : selectedFontFace.info.assFaceName,
       customFontPath: rawSettings.customFontPath,
       fontFaceIndex: rawSettings.fontFaceIndex,
+      latinFont: latinFont,
+      fadeLyricLines: rawSettings.fadeLyricLines,
       isBold: rawSettings.isBold,
       singerColors: rawSettings.singerColors,
       showSingerPrefixesInAss: rawSettings.showSingerPrefixesInAss,
@@ -376,6 +393,7 @@ class AssExporter {
     );
     final textMetrics = _AssTextMetrics(
       fontFace: selectedFontFace,
+      latinFontFace: latinFontFace,
       baseFontSize: baseFontSize,
       baseOutlineWidth: baseOutlineWidth,
       baseLayoutEdgeWidth: settings.fontOutlineWidth == null
@@ -510,7 +528,7 @@ class AssExporter {
     );
     for (final placement in placements) {
       sb.writeln(
-        'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},Interlude,,0,0,0,,{${placement.alignmentTag}\\pos(${placement.centerX.toStringAsFixed(1)},${centerY.toStringAsFixed(1)})\\fad(500,500)\\c&HFFFFFF&}${placement.text}',
+        'Dialogue: 0,${_formatTime(displayStart)},${_formatTime(displayEnd)},Interlude,,0,0,0,,{${placement.alignmentTag}\\pos(${placement.centerX.toStringAsFixed(1)},${(centerY + placement.centerYOffset).toStringAsFixed(1)})\\fad(500,500)\\c&HFFFFFF&}${placement.text}',
       );
     }
   }
@@ -1445,6 +1463,14 @@ class AssExporter {
 
   static Duration _parseTime(String timeStr) {
     return LyricTimeTag.parseDuration(timeStr) ?? Duration.zero;
+  }
+
+  static String _lyricFade(bool enabled, Duration start, Duration end) {
+    if (!enabled) return '';
+    // ASS event times are written in centiseconds.
+    final centiseconds = end.inMilliseconds ~/ 10 - start.inMilliseconds ~/ 10;
+    final milliseconds = min(200, centiseconds * 5);
+    return milliseconds > 0 ? '\\fad($milliseconds,$milliseconds)' : '';
   }
 
   static double _getCharWidth(
@@ -2677,6 +2703,11 @@ class AssExporter {
 
         if (hasAvatar) {
           final avatarTop = ys[rowIndex] + fs * 0.8 + avatarVerticalGap;
+          final fade = _lyricFade(
+            settings.fadeLyricLines,
+            displayStarts[rowIndex],
+            displayEnds[rowIndex],
+          );
           _writeSingerAvatars(
             sb: sb,
             avatars: avatars,
@@ -2685,6 +2716,7 @@ class AssExporter {
             gap: avatarHorizontalGap,
             displayStart: displayStarts[rowIndex],
             displayEnd: displayEnds[rowIndex],
+            fade: fade,
           );
           for (final placement in inlinePlacements) {
             _writeSingerAvatars(
@@ -2699,6 +2731,7 @@ class AssExporter {
               gap: avatarHorizontalGap,
               displayStart: displayStarts[rowIndex],
               displayEnd: displayEnds[rowIndex],
+              fade: fade,
             );
           }
         }
@@ -2770,6 +2803,7 @@ class AssExporter {
     required double gap,
     required Duration displayStart,
     required Duration displayEnd,
+    required String fade,
   }) {
     var currentX = left;
     for (final avatar in avatars) {
@@ -2782,7 +2816,7 @@ class AssExporter {
             .padLeft(2, '0')
             .toUpperCase();
         final tags =
-            '\\an7\\pos(${currentX.toStringAsFixed(1)},${top.toStringAsFixed(1)})'
+            '$fade\\an7\\pos(${currentX.toStringAsFixed(1)},${top.toStringAsFixed(1)})'
             '\\p1\\fscx${scale.toStringAsFixed(3)}\\fscy${scale.toStringAsFixed(3)}'
             '\\bord0\\shad0\\blur0\\1c${_colorToAss(layer.color)}\\1a&H$alpha&';
         sb.writeln(
@@ -2829,6 +2863,11 @@ class AssExporter {
       final y = ys[r];
       final displayStart = displayStarts[r];
       final displayEnd = displayEnds[r];
+      final fade = _lyricFade(
+        settings.fadeLyricLines,
+        displayStart,
+        displayEnd,
+      );
 
       for (int i = 0; i < rowNodes.length; i++) {
         var node = rowNodes[i];
@@ -2905,9 +2944,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultUnsung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 visualY: y,
                 fontSize: fs,
                 baseOutlineWidth: baseOutW,
@@ -2924,9 +2963,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultUnsung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 visualY: y,
                 fontSize: fs,
                 baseOutlineWidth: baseOutW,
@@ -2944,9 +2983,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultUnsung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 x: currentX,
                 y: y,
                 w: w,
@@ -2967,9 +3006,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultSung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 x: currentX,
                 y: y,
                 w: w,
@@ -3002,9 +3041,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultUnsung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 visualY: y,
                 fontSize: fs,
                 baseOutlineWidth: baseOutW,
@@ -3021,9 +3060,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultUnsung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 visualY: y,
                 fontSize: fs,
                 baseOutlineWidth: baseOutW,
@@ -3203,9 +3242,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultUnsung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 visualY: y,
                 fontSize: fs,
                 outlineWidth: baseOutW,
@@ -3224,9 +3263,9 @@ class AssExporter {
                 sb: sb,
                 rawText: placement.text,
                 style: 'DefaultSung',
-                alignmentTag: placement.alignmentTag,
+                alignmentTag: '$fade${placement.alignmentTag}',
                 posX: placement.centerX,
-                posY: y,
+                posY: y + placement.centerYOffset,
                 visualY: y,
                 fontSize: fs,
                 outlineWidth: baseOutW,
@@ -3249,9 +3288,9 @@ class AssExporter {
                   sb: sb,
                   rawText: placement.text,
                   style: 'RubyUnsung',
-                  alignmentTag: placement.alignmentTag,
+                  alignmentTag: '$fade${placement.alignmentTag}',
                   posX: placement.centerX,
-                  posY: rubyY,
+                  posY: rubyY + placement.centerYOffset,
                   visualY: rubyY,
                   fontSize: rubyFs,
                   baseOutlineWidth: rubyBaseOutW,
@@ -3268,9 +3307,9 @@ class AssExporter {
                   sb: sb,
                   rawText: placement.text,
                   style: 'RubyUnsung',
-                  alignmentTag: placement.alignmentTag,
+                  alignmentTag: '$fade${placement.alignmentTag}',
                   posX: placement.centerX,
-                  posY: rubyY,
+                  posY: rubyY + placement.centerYOffset,
                   visualY: rubyY,
                   fontSize: rubyFs,
                   baseOutlineWidth: rubyBaseOutW,
@@ -3287,9 +3326,9 @@ class AssExporter {
                   sb: sb,
                   rawText: placement.text,
                   style: 'RubyUnsung',
-                  alignmentTag: placement.alignmentTag,
+                  alignmentTag: '$fade${placement.alignmentTag}',
                   posX: placement.centerX,
-                  posY: rubyY,
+                  posY: rubyY + placement.centerYOffset,
                   visualY: rubyY,
                   fontSize: rubyFs,
                   outlineWidth: rubyBaseOutW,
@@ -3308,9 +3347,9 @@ class AssExporter {
                   sb: sb,
                   rawText: placement.text,
                   style: 'RubySung',
-                  alignmentTag: placement.alignmentTag,
+                  alignmentTag: '$fade${placement.alignmentTag}',
                   posX: placement.centerX,
-                  posY: rubyY,
+                  posY: rubyY + placement.centerYOffset,
                   visualY: rubyY,
                   fontSize: rubyFs,
                   outlineWidth: rubyBaseOutW,
@@ -3457,17 +3496,20 @@ class _AssTextPlacement {
   final double centerX;
   final double visualLeft;
   final String alignmentTag;
+  final double centerYOffset;
 
   const _AssTextPlacement({
     required this.text,
     required this.centerX,
     required this.visualLeft,
     required this.alignmentTag,
+    required this.centerYOffset,
   });
 }
 
 class _AssTextMetrics {
   final OpenTypeFontFace fontFace;
+  final OpenTypeFontFace? latinFontFace;
   final double baseFontSize;
   final double baseOutlineWidth;
   final double baseLayoutEdgeWidth;
@@ -3479,6 +3521,7 @@ class _AssTextMetrics {
 
   _AssTextMetrics({
     required this.fontFace,
+    this.latinFontFace,
     required this.baseFontSize,
     required this.baseOutlineWidth,
     required this.baseLayoutEdgeWidth,
@@ -3534,12 +3577,31 @@ class _AssTextMetrics {
     return width;
   }
 
-  double assFontSize(double fontSize) {
+  double assFontSize(double fontSize, [OpenTypeFontFace? selectedFace]) {
     // N3 treats the requested size as an em; libass normalizes it to the
     // hhea line box, so compensate with metrics from the selected font file.
-    final metricsHeight = fontFace.ascent + fontFace.descent;
-    if (fontFace.unitsPerEm <= 0 || metricsHeight <= 0) return fontSize;
-    return fontSize * metricsHeight / fontFace.unitsPerEm;
+    final face = selectedFace ?? fontFace;
+    final metricsHeight = face.ascent + face.descent;
+    if (face.unitsPerEm <= 0 || metricsHeight <= 0) return fontSize;
+    return fontSize * metricsHeight / face.unitsPerEm;
+  }
+
+  static double _baselineFromCenter(OpenTypeFontFace face, double fontSize) =>
+      fontSize * (face.ascent - face.descent) / (2 * face.unitsPerEm);
+
+  static final _latinOrDigit = RegExp(
+    r'^[\p{Script=Latin}\p{Nd}]',
+    unicode: true,
+  );
+
+  OpenTypeFontFace _faceFor(String char) {
+    final alternate = latinFontFace;
+    if (alternate != null &&
+        _latinOrDigit.hasMatch(char) &&
+        alternate.metricsForCodePoint(char.runes.first).glyphId != 0) {
+      return alternate;
+    }
+    return fontFace;
   }
 
   double assCenterYForDrawBottom(double drawBottom, double fontSize) {
@@ -3548,10 +3610,7 @@ class _AssTextMetrics {
       return drawBottom - fontSize / 2 - _layoutEdgeWidth(fontSize) / 2;
     }
     final directWriteDescent = fontSize * fontFace.descent / metricsHeight;
-    final assBaselineFromCenter =
-        fontSize *
-        (fontFace.ascent - fontFace.descent) /
-        (2 * fontFace.unitsPerEm);
+    final assBaselineFromCenter = _baselineFromCenter(fontFace, fontSize);
     return drawBottom -
         directWriteDescent -
         _layoutEdgeWidth(fontSize) / 2 -
@@ -3593,6 +3652,11 @@ class _AssTextMetrics {
       final glyph = _glyphLayout(char, fontSize);
       final cellLeft = left + cursor;
       if (!_isWhitespace(char) && glyph.hasOutline) {
+        final face = _faceFor(char);
+        final usesAlternate = face != fontFace;
+        final fontOverride = usesAlternate
+            ? '\\fn${face.info.assFaceName.replaceAll(RegExp(r'[\\{}\r\n]'), '')}'
+            : '';
         final fillLeft =
             cellLeft + glyph.geometryLeftOffset + glyph.edgeSize / 2;
         final center = fillLeft - glyph.xMin + glyph.advanceWidth / 2;
@@ -3601,9 +3665,13 @@ class _AssTextMetrics {
             text: char,
             centerX: center,
             visualLeft: fillLeft - _outlineWidth(fontSize),
+            centerYOffset: usesAlternate
+                ? _baselineFromCenter(fontFace, fontSize) -
+                      _baselineFromCenter(face, fontSize)
+                : 0,
             alignmentTag:
-                '\\fsp0'
-                '\\fs${_formatNumber(assFontSize(fontSize))}\\an5',
+                '$fontOverride\\fsp0'
+                '\\fs${_formatNumber(assFontSize(fontSize, face))}\\an5',
           ),
         );
       }
@@ -3640,9 +3708,10 @@ class _AssTextMetrics {
       var advanceWidth = 0.0;
       var hasOutline = false;
       var cursor = 0.0;
-      final scale = fontSize / fontFace.unitsPerEm;
+      final face = _faceFor(char);
+      final scale = fontSize / face.unitsPerEm;
       for (final rune in char.runes) {
-        final metrics = fontFace.metricsForCodePoint(rune);
+        final metrics = face.metricsForCodePoint(rune);
         final advance = metrics.advanceWidth * scale;
         if (metrics.hasOutline && metrics.advanceWidth > 0) {
           var leftBearing = metrics.leftSideBearing;

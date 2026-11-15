@@ -1792,7 +1792,18 @@ class LyricsStateService extends ChangeNotifier {
           final node = line.nodes[ni];
           if (jobResults.containsKey(li) && jobResults[li]!.containsKey(ni)) {
             final rubyNodes = jobResults[li]![ni];
-            if (rubyNodes != null && rubyNodes.isNotEmpty) {
+            if (rubyNodes != null &&
+                rubyNodes.isNotEmpty &&
+                node is LyricText &&
+                _rubyResultSurface(rubyNodes) == node.text) {
+              if ((rubyNodes.first, newNodes.lastOrNull) case (
+                LyricRuby ruby,
+                LyricTimeTag(type: final type, time: final time),
+              ) when type != 10 && time.isNotEmpty) {
+                final start = ruby.rubyNodes.first as LyricTimeTag;
+                ruby.rubyNodes[0] = LyricTimeTag(type: start.type, time: time);
+                newNodes.removeLast();
+              }
               newNodes.addAll(rubyNodes);
             } else {
               newNodes.add(node);
@@ -1875,6 +1886,47 @@ class LyricsStateService extends ChangeNotifier {
     return expanded;
   }
 
+  String _rubyResultSurface(List<LyricNode> nodes) => nodes.map((node) {
+    return switch (node) {
+      LyricRuby() => node.baseText,
+      LyricText() => node.text,
+      _ => '',
+    };
+  }).join();
+
+  List<({String surface, String? furigana})> _splitYahooWord(
+    String surface,
+    String? furigana,
+    Object? subwords,
+  ) {
+    final wholeWord = [(surface: surface, furigana: furigana)];
+    if (furigana == null ||
+        furigana == surface ||
+        subwords is! List ||
+        subwords.isEmpty) {
+      return wholeWord;
+    }
+
+    final parts = <({String surface, String? furigana})>[];
+    for (final subword in subwords) {
+      if (subword is! Map || subword['surface'] is! String) return wholeWord;
+      final base = subword['surface'] as String;
+      final reading = subword['furigana'];
+      if (base.isEmpty ||
+          (reading != null && (reading is! String || reading.isEmpty))) {
+        return wholeWord;
+      }
+      parts.add((surface: base, furigana: reading as String?));
+    }
+    // Keep an indivisible reading on the whole word if Yahoo's subwords
+    // cannot reconstruct both the original surface and its reading.
+    if (parts.map((part) => part.surface).join() != surface ||
+        parts.map((part) => part.furigana ?? part.surface).join() != furigana) {
+      return wholeWord;
+    }
+    return parts;
+  }
+
   Future<List<List<LyricNode>>> _fetchRubyBatch(List<String> texts) async {
     final joinedText = texts.join('\n');
     final url = Uri.parse(
@@ -1913,7 +1965,7 @@ class LyricsStateService extends ChangeNotifier {
       }
       final words = wordsValue;
 
-      final processedWords = <Map<String, dynamic>>[];
+      final wordsWithReadings = <({String surface, String? furigana})>[];
       final smallKanaRegex = RegExp(r'^[ぁぃぅぇぉっゃゅょァィゥェォッャュョー゛]+');
 
       for (final value in words) {
@@ -1926,49 +1978,44 @@ class LyricsStateService extends ChangeNotifier {
             (furiganaValue != null && furiganaValue is! String)) {
           throw const FormatException('Invalid Yahoo API word fields.');
         }
-        final surface = surfaceValue;
-        final furigana = furiganaValue as String?;
-        final subword = value['subword'];
+        wordsWithReadings.addAll(
+          _splitYahooWord(
+            surfaceValue,
+            furiganaValue as String?,
+            value['subword'],
+          ),
+        );
+      }
 
+      final processedWords = <({String surface, String? furigana})>[];
+      for (final (surface: surface, furigana: furigana) in wordsWithReadings) {
         final match = smallKanaRegex.firstMatch(surface);
         if (match != null && processedWords.isNotEmpty) {
           final kana = match.group(0)!;
           final prev = processedWords.last;
-
-          prev['surface'] = (prev['surface'] as String) + kana;
-          if (prev['furigana'] != null) {
-            prev['furigana'] = (prev['furigana'] as String) + kana;
+          if (!prev.surface.contains('\n') &&
+              (furigana == null || furigana.startsWith(kana))) {
+            processedWords.last = (
+              surface: prev.surface + kana,
+              furigana: prev.furigana == null ? null : prev.furigana! + kana,
+            );
+            final remainder = surface.substring(kana.length);
+            if (remainder.isNotEmpty) {
+              processedWords.add((
+                surface: remainder,
+                furigana: furigana?.substring(kana.length),
+              ));
+            }
+            continue;
           }
-
-          final remainder = surface.substring(kana.length);
-          if (remainder.isNotEmpty) {
-            final remainingFurigana =
-                furigana != null && furigana.startsWith(kana)
-                ? furigana.substring(kana.length)
-                : furigana;
-            processedWords.add({
-              'surface': remainder,
-              'furigana': remainingFurigana,
-              'subword': subword,
-            });
-          }
-        } else {
-          processedWords.add({
-            'surface': surface,
-            'furigana': furigana,
-            'subword': subword,
-          });
         }
+        processedWords.add((surface: surface, furigana: furigana));
       }
 
       final batchResults = <List<LyricNode>>[];
       var currentNodes = <LyricNode>[];
 
-      for (var w in processedWords) {
-        final surface = w['surface'] as String;
-        final furigana = w['furigana'] as String?;
-        final subword = w['subword'];
-
+      for (final (surface: surface, furigana: furigana) in processedWords) {
         if (surface.contains('\n')) {
           final parts = surface.split('\n');
           for (int i = 0; i < parts.length; i++) {
@@ -1982,18 +2029,7 @@ class LyricsStateService extends ChangeNotifier {
             }
           }
         } else {
-          if (subword != null &&
-              subword is List &&
-              furigana != null &&
-              furigana != surface) {
-            final int type = _calculateTagCount(surface, furigana);
-            currentNodes.add(
-              LyricRuby(
-                baseText: surface,
-                rubyNodes: _expandRubyNodes(type, surface, furigana),
-              ),
-            );
-          } else if (furigana != null && furigana != surface) {
+          if (furigana != null && furigana.isNotEmpty && furigana != surface) {
             final int type = _calculateTagCount(surface, furigana);
             currentNodes.add(
               LyricRuby(

@@ -372,6 +372,21 @@ class AppLocalizationsJa extends AppLocalizations {
   String get defaultColors => 'デフォルト配色';
 
   @override
+  String get copyColorCode => '配色コードをコピー';
+
+  @override
+  String get japaneseLyricsFont => 'かな・漢字のフォント';
+
+  @override
+  String get latinLyricsFont => '英数字のフォント';
+
+  @override
+  String get useJapaneseLyricsFont => 'かな・漢字と同じフォント';
+
+  @override
+  String get fadeLyricLines => '歌詞行をフェードイン・アウト';
+
+  @override
   String get importAction => 'インポート';
 
   @override

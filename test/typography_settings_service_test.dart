@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yuukilyrics/models/font_library_asset.dart';
 import 'package:yuukilyrics/services/typography_settings_service.dart';
 
 void main() {
@@ -28,6 +29,12 @@ void main() {
       fontFaceIndex: 2,
       fontDisplayName: 'Example Sans',
       fontStyleName: 'Bold',
+      latinFont: FontFaceSelection(
+        path: 'latin.ttc',
+        faceIndex: 1,
+        displayName: 'Latin Serif',
+        styleName: 'Italic',
+      ),
       fontSize: 85,
       letterSpacingStep: 0,
       decorationWidth: 10,
@@ -51,6 +58,10 @@ void main() {
     expect(restored.fontFaceIndex, settings.fontFaceIndex);
     expect(restored.fontDisplayName, settings.fontDisplayName);
     expect(restored.fontStyleName, settings.fontStyleName);
+    expect(restored.latinFont?.path, settings.latinFont!.path);
+    expect(restored.latinFont?.faceIndex, 1);
+    expect(restored.latinFont?.displayName, 'Latin Serif');
+    expect(restored.latinFont?.styleName, 'Italic');
   });
 
   test(
@@ -67,6 +78,7 @@ void main() {
       expect(restored.fontDisplayName, fallback.fontDisplayName);
       expect(restored.fontStyleName, fallback.fontStyleName);
       expect(restored.fontSize, 96);
+      expect(restored.latinFont, isNull);
     },
   );
 }

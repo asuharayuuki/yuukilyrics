@@ -728,6 +728,36 @@ abstract class AppLocalizations {
   /// **'デフォルト配色'**
   String get defaultColors;
 
+  /// No description provided for @copyColorCode.
+  ///
+  /// In ja, this message translates to:
+  /// **'配色コードをコピー'**
+  String get copyColorCode;
+
+  /// No description provided for @japaneseLyricsFont.
+  ///
+  /// In ja, this message translates to:
+  /// **'かな・漢字のフォント'**
+  String get japaneseLyricsFont;
+
+  /// No description provided for @latinLyricsFont.
+  ///
+  /// In ja, this message translates to:
+  /// **'英数字のフォント'**
+  String get latinLyricsFont;
+
+  /// No description provided for @useJapaneseLyricsFont.
+  ///
+  /// In ja, this message translates to:
+  /// **'かな・漢字と同じフォント'**
+  String get useJapaneseLyricsFont;
+
+  /// No description provided for @fadeLyricLines.
+  ///
+  /// In ja, this message translates to:
+  /// **'歌詞行をフェードイン・アウト'**
+  String get fadeLyricLines;
+
   /// No description provided for @importAction.
   ///
   /// In ja, this message translates to:

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/font_library_asset.dart';
 import 'atomic_file_writer.dart';
 
 class TypographySettingsData {
@@ -12,6 +13,7 @@ class TypographySettingsData {
   final int fontFaceIndex;
   final String fontDisplayName;
   final String fontStyleName;
+  final FontFaceSelection? latinFont;
   final double fontSize;
   final int letterSpacingStep;
   final double decorationWidth;
@@ -30,6 +32,7 @@ class TypographySettingsData {
     required this.fontFaceIndex,
     required this.fontDisplayName,
     required this.fontStyleName,
+    this.latinFont,
     required this.fontSize,
     required this.letterSpacingStep,
     required this.decorationWidth,
@@ -67,6 +70,9 @@ class TypographySettingsData {
         fallback.fontDisplayName,
       ),
       fontStyleName: _readString(json, 'fontStyleName', fallback.fontStyleName),
+      latinFont: json.containsKey('latinFont')
+          ? _readFontSelection(json['latinFont'])
+          : fallback.latinFont,
       fontSize: _readDouble(json, 'fontSize', fallback.fontSize, 20, 200),
       letterSpacingStep: _readInt(
         json,
@@ -148,6 +154,15 @@ class TypographySettingsData {
     'fontFaceIndex': fontFaceIndex,
     'fontDisplayName': fontDisplayName,
     'fontStyleName': fontStyleName,
+    'latinFont': switch (latinFont) {
+      final font? => {
+        'path': font.path,
+        'faceIndex': font.faceIndex,
+        'displayName': font.displayName,
+        'styleName': font.styleName,
+      },
+      null => null,
+    },
     'fontSize': fontSize,
     'letterSpacingStep': letterSpacingStep,
     'decorationWidth': decorationWidth,
@@ -160,6 +175,25 @@ class TypographySettingsData {
     'singerAvatarSize': singerAvatarSize,
     'singerAvatarGap': singerAvatarGap,
   };
+
+  static FontFaceSelection? _readFontSelection(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final path = _readOptionalString(value, 'path', null);
+    final name = _readString(value, 'displayName', '');
+    final faceIndex = _readInt(value, 'faceIndex', -1, 0, 65535);
+    if (name.isEmpty ||
+        faceIndex < 0 ||
+        (path == null && faceIndex != 0) ||
+        (value['path'] != null && path == null)) {
+      return null;
+    }
+    return FontFaceSelection(
+      path: path,
+      faceIndex: faceIndex,
+      displayName: name,
+      styleName: _readString(value, 'styleName', 'Regular'),
+    );
+  }
 
   static String _readString(
     Map<String, dynamic> json,

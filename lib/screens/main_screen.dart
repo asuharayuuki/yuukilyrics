@@ -615,6 +615,7 @@ class _MainScreenState extends State<MainScreen> {
         await fontService.prepareFontForRendering(
           fontFilePath: settings.customFontPath,
           faceIndex: settings.fontFaceIndex,
+          latinFont: settings.latinFont,
         );
       } catch (e) {
         debugPrint('Failed to prepare selected font: $e');

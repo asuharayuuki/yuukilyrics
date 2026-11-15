@@ -372,6 +372,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get defaultColors => '默认配色';
 
   @override
+  String get copyColorCode => '复制配色代码';
+
+  @override
+  String get japaneseLyricsFont => '假名与汉字字体';
+
+  @override
+  String get latinLyricsFont => '英文字母与数字字体';
+
+  @override
+  String get useJapaneseLyricsFont => '与假名及汉字使用相同字体';
+
+  @override
+  String get fadeLyricLines => '歌词逐行淡入淡出';
+
+  @override
   String get importAction => '导入';
 
   @override

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/font_library_asset.dart';
 import 'open_type_font.dart';
 
 class FontService {
@@ -55,33 +56,26 @@ class FontService {
   Future<String> prepareFontForRendering({
     String? fontFilePath,
     int faceIndex = 0,
-  }) {
-    return fontFilePath == null
-        ? extractBundledFont()
-        : processAndSandboxFont(fontFilePath, faceIndex: faceIndex);
-  }
-
-  Future<String> extractBundledFont() async {
-    final sandboxDir = await getSandboxFontsDir();
-    await _clearSandboxDirectory(sandboxDir);
-    final bytes = await _loadBundledFontBytes();
-    final face = OpenTypeFontFile.parse(bytes).faceAt(0);
-    final newPath = await _writeStandaloneFace(sandboxDir, face);
-    sandboxFontPath = newPath;
-    extractedFontName = face.info.assFontName;
-    return extractedFontName!;
-  }
-
-  Future<String> processAndSandboxFont(
-    String fontFilePath, {
-    int faceIndex = 0,
+    FontFaceSelection? latinFont,
   }) async {
-    final file = await inspectFontFile(fontFilePath);
-    final face = file.faceAt(faceIndex);
+    final face = await loadSelectedFace(
+      fontFilePath: fontFilePath,
+      faceIndex: faceIndex,
+    );
+    final latinFace =
+        latinFont != null &&
+            (latinFont.path != fontFilePath || latinFont.faceIndex != faceIndex)
+        ? await loadSelectedFace(
+            fontFilePath: latinFont.path,
+            faceIndex: latinFont.faceIndex,
+          )
+        : null;
     final sandboxDir = await getSandboxFontsDir();
     await _clearSandboxDirectory(sandboxDir);
-    final newPath = await _writeStandaloneFace(sandboxDir, face);
-    sandboxFontPath = newPath;
+    sandboxFontPath = await _writeStandaloneFace(sandboxDir, face);
+    if (latinFace != null) {
+      await _writeStandaloneFace(sandboxDir, latinFace, prefix: 'latin-');
+    }
     extractedFontName = face.info.assFontName;
     return extractedFontName!;
   }
@@ -108,13 +102,17 @@ class FontService {
 
   Future<String> _writeStandaloneFace(
     String directoryPath,
-    OpenTypeFontFace face,
-  ) async {
+    OpenTypeFontFace face, {
+    String prefix = '',
+  }) async {
     final safeName = face.info.assFontName.replaceAll(
       RegExp(r'[<>:"/\\|?*]'),
       '_',
     );
-    final path = p.join(directoryPath, '$safeName${face.standaloneExtension}');
+    final path = p.join(
+      directoryPath,
+      '$prefix$safeName${face.standaloneExtension}',
+    );
     await File(path).writeAsBytes(face.buildStandaloneFont(), flush: true);
     return path;
   }

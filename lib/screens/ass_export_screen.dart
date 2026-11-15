@@ -23,7 +23,6 @@ import 'package:flutter/services.dart'
         Clipboard,
         ClipboardData,
         FilteringTextInputFormatter,
-        FontLoader,
         LengthLimitingTextInputFormatter;
 import '../services/ffmpeg_service.dart';
 import '../services/singer_avatar_library_service.dart';
@@ -55,6 +54,12 @@ class _FontLibraryChoice {
       faceIndex = null,
       useBuiltIn = false,
       openManager = true;
+
+  const _FontLibraryChoice.usePrimary()
+    : asset = null,
+      faceIndex = null,
+      useBuiltIn = false,
+      openManager = false;
 }
 
 String _fontFamilyLabel(OpenTypeFontFaceInfo face) {
@@ -388,6 +393,8 @@ class AssExportSettings {
   final String fontName;
   final String? customFontPath;
   final int fontFaceIndex;
+  final FontFaceSelection? latinFont;
+  final bool fadeLyricLines;
   final bool isBold;
   final List<SingerColorInfo> singerColors;
   final bool showSingerPrefixesInAss;
@@ -422,6 +429,8 @@ class AssExportSettings {
     required this.fontName,
     this.customFontPath,
     this.fontFaceIndex = 0,
+    this.latinFont,
+    this.fadeLyricLines = false,
     required this.isBold,
     required this.singerColors,
     required this.showSingerPrefixesInAss,
@@ -463,6 +472,8 @@ class AssExportPageState {
   String _fontDisplayName = FontService.bundledFontFamily;
   String _fontStyleName = 'Regular';
   int _fontFaceIndex = 0;
+  FontFaceSelection? _latinFont;
+  bool _fadeLyricLines = false;
   bool _isBold = true;
   final List<SingerColorInfo> _singerColors = [];
   bool _showSingerPrefixesInAss = false;
@@ -510,6 +521,7 @@ class AssExportPageState {
     fontFaceIndex: _fontFaceIndex,
     fontDisplayName: _fontDisplayName,
     fontStyleName: _fontStyleName,
+    latinFont: _latinFont,
     fontSize: _fontSize,
     letterSpacingStep: _letterSpacingStep,
     decorationWidth: _outlineWidth,
@@ -550,6 +562,7 @@ class AssExportPageState {
     _fontFaceIndex = settings.fontFaceIndex;
     _fontDisplayName = settings.fontDisplayName;
     _fontStyleName = settings.fontStyleName;
+    _latinFont = settings.latinFont;
     _fontSize = settings.fontSize;
     _letterSpacingStep = settings.letterSpacingStep;
     _outlineWidth = settings.decorationWidth;
@@ -576,6 +589,12 @@ class AssExportPageState {
     _fontFaceIndex = fontFaceIndex;
     _fontDisplayName = fontDisplayName;
     _fontStyleName = fontStyleName;
+    unawaited(_saveTypographySettings(_typographySettings));
+  }
+
+  void applyLatinFontSelection(FontFaceSelection? font) {
+    _typographyRevision++;
+    _latinFont = font;
     unawaited(_saveTypographySettings(_typographySettings));
   }
 
@@ -728,7 +747,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
   late final List<TextEditingController> _singerControllers;
   late TextEditingController _resolutionController;
   bool _isExporting = false;
-  final Set<String> _loadedPreviewFonts = {};
+  String? _previewFontFamily;
 
   String? get _customFontPath => _pageState._customFontPath;
   String get _fontName => _pageState._fontName;
@@ -813,16 +832,28 @@ class _AssExportScreenState extends State<AssExportScreen> {
     _resolutionController.addListener(_onResolutionTextChanged);
     widget.fontLibrary.addListener(_handleFontLibraryChanged);
     widget.fontLibrary.refresh();
-    unawaited(_loadPersistedPreviewFont());
     _initVideoResolution();
   }
 
   Future<void> _loadPersistedPreviewFont() async {
     final path = _customFontPath;
     if (path == null) return;
+    final asset = widget.fontLibrary.assets
+        .where((asset) => asset.path == path)
+        .firstOrNull;
+    if (asset == null) return;
+    final faceIndex = _fontFaceIndex;
     try {
-      await _loadPreviewFont(path, _fontName, _fontFaceIndex);
-      if (mounted) setState(() {});
+      final family = await widget.fontLibrary.loadPreviewFontFamily(
+        asset: asset,
+        faceIndex: faceIndex,
+      );
+      if (mounted &&
+          _customFontPath == path &&
+          _fontFaceIndex == faceIndex &&
+          _previewFontFamily != family) {
+        setState(() => _previewFontFamily = family);
+      }
     } catch (error) {
       debugPrint('Failed to load persisted preview font: $error');
     }
@@ -843,12 +874,17 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
   void _handleFontLibraryChanged() {
     if (!mounted || widget.fontLibrary.isLoading) return;
+    final latinPath = _pageState._latinFont?.path;
+    if (latinPath != null && !widget.fontLibrary.containsPath(latinPath)) {
+      _pageState.applyLatinFontSelection(null);
+    }
     final selectedPath = _customFontPath;
     if (selectedPath != null &&
         !widget.fontLibrary.containsPath(selectedPath)) {
       _selectBundledFont();
       return;
     }
+    unawaited(_loadPersistedPreviewFont());
     setState(() {});
   }
 
@@ -1033,10 +1069,19 @@ class _AssExportScreenState extends State<AssExportScreen> {
   }
 
   Widget _buildTypographySection() {
+    final latinFont = _pageState._latinFont;
     return _buildSection(
       title: context.l10n.textSettings,
       children: [
         _buildFontControl(),
+        _buildDivider(),
+        _buildActionSetting(
+          title: context.l10n.latinLyricsFont,
+          value: latinFont == null
+              ? context.l10n.useJapaneseLyricsFont
+              : '${latinFont.displayName} · ${latinFont.styleName}',
+          onTap: () => _showFontLibraryPicker(latin: true),
+        ),
         _buildDivider(),
         _buildSwitchSetting(
           title: context.l10n.bold,
@@ -1074,6 +1119,13 @@ class _AssExportScreenState extends State<AssExportScreen> {
         _buildResolutionPicker(),
         _buildDivider(),
         _buildPagingPicker(),
+        _buildDivider(),
+        _buildSwitchSetting(
+          title: context.l10n.fadeLyricLines,
+          value: _pageState._fadeLyricLines,
+          onChanged: (value) =>
+              setState(() => _pageState._fadeLyricLines = value),
+        ),
         _buildDivider(),
         _buildSliderSetting(
           title: context.l10n.horizontalMargin,
@@ -1153,6 +1205,10 @@ class _AssExportScreenState extends State<AssExportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(
+                  context.l10n.japaneseLyricsFont,
+                  style: theme.textTheme.bodySmall,
+                ),
                 Text(
                   _fontDisplayName,
                   style: theme.textTheme.bodyLarge?.copyWith(
@@ -1506,21 +1562,23 @@ class _AssExportScreenState extends State<AssExportScreen> {
       unsungOutlineColor: _unsungOutlineColor,
       unsungDecorationColor: _unsungDecorationColor,
     );
-    final rows = [defaultColors, ..._singerColors].map((singer) {
-      final fields = _colorPresetFromSinger(
-        singer.prefix.trim(),
-        singer,
-      ).toMarkdownFields();
-      fields[0] = fields[0]
-          .replaceAll('|', '｜')
-          .replaceAll(RegExp(r'[\r\n]+'), ' ');
-      return '| ${fields.join(' | ')} |';
-    });
+    final rows = [
+      defaultColors,
+      ..._singerColors,
+    ].map((singer) => _colorMarkdownRow(singer, singer.prefix.trim()));
     return [
       '| ${header.join(' | ')} |',
       '| ${List.filled(header.length, '---').join(' | ')} |',
       ...rows,
     ].join('\n');
+  }
+
+  String _colorMarkdownRow(SingerColorInfo singer, String name) {
+    final safeName = name
+        .replaceAll('|', '｜')
+        .replaceAll(RegExp(r'[\r\n]+'), ' ');
+    final fields = _colorPresetFromSinger(safeName, singer).toMarkdownFields();
+    return '| ${fields.join(' | ')} |';
   }
 
   Future<void> _showCurrentSingerColorMarkdownDialog() async {
@@ -2157,7 +2215,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
                             child: CustomPaint(
                               painter: _AssStyleSamplePainter(
                                 colors: edited,
-                                fontFamily: _previewFontFamily,
+                                fontFamily: _previewFontFamily ?? 'KosugiMaru',
                                 isBold: _isBold,
                                 assFontSize: _fontSize,
                                 baseOutlineWidth: _resolvedFontOutlineWidth,
@@ -2246,21 +2304,40 @@ class _AssExportScreenState extends State<AssExportScreen> {
               ),
               actionsAlignment: MainAxisAlignment.spaceBetween,
               actions: [
-                if (allowSavePreset)
-                  IconButton(
-                    tooltip: context.l10n.saveColorPreset,
-                    onPressed: () async {
-                      final preset = await _saveCurrentColorPreset(edited);
-                      if (preset == null || !ctx.mounted) return;
-                      if (fillPrefixFromPreset &&
-                          edited.prefix.trim().isEmpty) {
-                        setDialogState(() => edited.prefix = preset.name);
-                      }
-                    },
-                    icon: const Icon(Icons.save_outlined),
-                  )
-                else
-                  const SizedBox.shrink(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: context.l10n.copyColorCode,
+                      onPressed: () async {
+                        final prefix = edited.prefix.trim();
+                        final row = _colorMarkdownRow(
+                          edited,
+                          prefix.isEmpty ? context.l10n.defaultColors : prefix,
+                        );
+                        await Clipboard.setData(ClipboardData(text: row));
+                        if (!ctx.mounted) return;
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text(ctx.l10n.copiedToClipboard)),
+                        );
+                      },
+                      icon: const Icon(Icons.copy_outlined),
+                    ),
+                    if (allowSavePreset)
+                      IconButton(
+                        tooltip: context.l10n.saveColorPreset,
+                        onPressed: () async {
+                          final preset = await _saveCurrentColorPreset(edited);
+                          if (preset == null || !ctx.mounted) return;
+                          if (fillPrefixFromPreset &&
+                              edited.prefix.trim().isEmpty) {
+                            setDialogState(() => edited.prefix = preset.name);
+                          }
+                        },
+                        icon: const Icon(Icons.save_outlined),
+                      ),
+                  ],
+                ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -2369,6 +2446,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
       await fontService.prepareFontForRendering(
         fontFilePath: _customFontPath,
         faceIndex: _fontFaceIndex,
+        latinFont: _pageState._latinFont,
       );
       fontSandboxDir = await fontService.getSandboxFontsDir();
     } catch (error) {
@@ -2412,6 +2490,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
         fontFaceIndex: _fontFaceIndex,
         fontDisplayName: _fontDisplayName,
         fontStyleName: _fontStyleName,
+        latinFont: _pageState._latinFont,
         fontSize: result.fontSize,
         letterSpacingStep: result.letterSpacingStep,
         decorationWidth: result.decorationWidth,
@@ -2433,6 +2512,8 @@ class _AssExportScreenState extends State<AssExportScreen> {
       fontName: _fontName,
       customFontPath: _customFontPath,
       fontFaceIndex: _fontFaceIndex,
+      latinFont: _pageState._latinFont,
+      fadeLyricLines: _pageState._fadeLyricLines,
       isBold: _isBold,
       singerColors: _singerColors,
       showSingerPrefixesInAss: _showSingerPrefixesInAss,
@@ -2572,6 +2653,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
     await fontService.prepareFontForRendering(
       fontFilePath: settings.customFontPath,
       faceIndex: settings.fontFaceIndex,
+      latinFont: settings.latinFont,
     );
     fontSandboxDir = await fontService.getSandboxFontsDir();
 
@@ -2593,9 +2675,12 @@ class _AssExportScreenState extends State<AssExportScreen> {
     }
   }
 
-  Future<void> _showFontLibraryPicker() async {
+  Future<void> _showFontLibraryPicker({bool latin = false}) async {
     await widget.fontLibrary.refresh();
     if (!mounted) return;
+    final latinFont = _pageState._latinFont;
+    final selectedPath = latin ? latinFont?.path : _customFontPath;
+    final selectedFaceIndex = latin ? latinFont?.faceIndex : _fontFaceIndex;
     final fontChoices = <_FontLibraryChoice>[
       for (final asset in widget.fontLibrary.assets)
         for (final face in asset.faces)
@@ -2619,7 +2704,9 @@ class _AssExportScreenState extends State<AssExportScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        context.l10n.chooseFont,
+                        latin
+                            ? context.l10n.latinLyricsFont
+                            : context.l10n.chooseFont,
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
@@ -2639,8 +2726,24 @@ class _AssExportScreenState extends State<AssExportScreen> {
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount:
-                      1 + fontChoices.length + (fontChoices.isEmpty ? 1 : 0),
+                      (latin ? 2 : 1) +
+                      fontChoices.length +
+                      (fontChoices.isEmpty ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (latin && index == 0) {
+                      return ListTile(
+                        leading: const Icon(Icons.text_fields),
+                        title: Text(context.l10n.useJapaneseLyricsFont),
+                        trailing: latinFont == null
+                            ? const Icon(Icons.check)
+                            : null,
+                        onTap: () => Navigator.pop(
+                          context,
+                          const _FontLibraryChoice.usePrimary(),
+                        ),
+                      );
+                    }
+                    if (latin) index--;
                     if (index == 0) {
                       return ListTile(
                         leading: const Icon(Icons.text_fields),
@@ -2650,7 +2753,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
                               ?.copyWith(fontFamily: 'KosugiMaru'),
                         ),
                         subtitle: const Text('Regular'),
-                        trailing: _customFontPath == null
+                        trailing: selectedPath == null && selectedFaceIndex == 0
                             ? const Icon(Icons.check)
                             : null,
                         onTap: () => Navigator.pop(
@@ -2675,8 +2778,8 @@ class _AssExportScreenState extends State<AssExportScreen> {
                       (item) => item.index == choice.faceIndex,
                     );
                     final isSelected =
-                        _customFontPath == asset.path &&
-                        _fontFaceIndex == face.index;
+                        selectedPath == asset.path &&
+                        selectedFaceIndex == face.index;
                     return ListTile(
                       leading: const Icon(Icons.font_download_outlined),
                       title: FontFacePreviewText(
@@ -2705,6 +2808,27 @@ class _AssExportScreenState extends State<AssExportScreen> {
     if (!mounted || selected == null) return;
     if (selected.openManager) {
       widget.onManageFonts?.call();
+    } else if (latin) {
+      final asset = selected.asset;
+      final face = asset?.faces.firstWhere(
+        (item) => item.index == selected.faceIndex,
+      );
+      final selection = switch (face) {
+        final chosen? => FontFaceSelection(
+          path: asset!.path,
+          faceIndex: chosen.index,
+          displayName: _fontFamilyLabel(chosen),
+          styleName: _fontStyleLabel(chosen),
+        ),
+        null when selected.useBuiltIn => const FontFaceSelection(
+          path: null,
+          faceIndex: 0,
+          displayName: FontService.bundledFontFamily,
+          styleName: 'Regular',
+        ),
+        null => null,
+      };
+      setState(() => _pageState.applyLatinFontSelection(selection));
     } else if (selected.useBuiltIn) {
       _selectBundledFont();
     } else if (selected.asset != null && selected.faceIndex != null) {
@@ -2716,9 +2840,13 @@ class _AssExportScreenState extends State<AssExportScreen> {
     if (asset.faces.isEmpty) return;
     final face = asset.faces.firstWhere((item) => item.index == faceIndex);
     try {
-      await _loadPreviewFont(asset.path, face.assFontName, face.index);
+      final family = await widget.fontLibrary.loadPreviewFontFamily(
+        asset: asset,
+        faceIndex: face.index,
+      );
       if (!mounted) return;
       setState(() {
+        _previewFontFamily = family;
         _pageState.applyFontSelection(
           customFontPath: asset.path,
           fontFaceIndex: face.index,
@@ -2737,6 +2865,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
   void _selectBundledFont() {
     setState(() {
+      _previewFontFamily = null;
       _pageState.applyFontSelection(
         customFontPath: null,
         fontFaceIndex: 0,
@@ -2745,31 +2874,6 @@ class _AssExportScreenState extends State<AssExportScreen> {
         fontStyleName: 'Regular',
       );
     });
-  }
-
-  String get _previewFontFamily =>
-      _customFontPath == null ? 'KosugiMaru' : _fontName;
-
-  Future<void> _loadPreviewFont(
-    String path,
-    String family,
-    int faceIndex,
-  ) async {
-    final fontKey = '$family|$path|$faceIndex';
-    if (_loadedPreviewFonts.contains(fontKey)) return;
-
-    final bytes = await FontService().loadStandaloneFaceBytes(
-      fontFilePath: path,
-      faceIndex: faceIndex,
-    );
-    final fontData = ByteData.view(
-      bytes.buffer,
-      bytes.offsetInBytes,
-      bytes.lengthInBytes,
-    );
-    final loader = FontLoader(family)..addFont(Future.value(fontData));
-    await loader.load();
-    _loadedPreviewFonts.add(fontKey);
   }
 
   Widget _buildSingerColorCard({
@@ -3502,6 +3606,7 @@ class _TypographySettingsDialogState extends State<_TypographySettingsDialog> {
       fontName: base.fontName,
       customFontPath: base.customFontPath,
       fontFaceIndex: base.fontFaceIndex,
+      latinFont: base.latinFont,
       isBold: base.isBold,
       singerColors: base.singerColors,
       showSingerPrefixesInAss: base.showSingerPrefixesInAss,

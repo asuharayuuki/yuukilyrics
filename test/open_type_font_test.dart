@@ -12,5 +12,18 @@ void main() {
     );
 
     expect(face.assFontName, 'Noto Serif CJK JP');
+    expect(face.assFaceName, 'NotoSerifCJKjp-Bold');
+  });
+
+  test('a face without a PostScript name uses its existing family lookup', () {
+    const face = OpenTypeFontFaceInfo(
+      index: 0,
+      familyName: 'Example Serif',
+      subfamilyName: 'Regular',
+      fullName: 'Example Serif Regular',
+      postScriptName: '',
+    );
+
+    expect(face.assFaceName, 'Example Serif');
   });
 }

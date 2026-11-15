@@ -38,6 +38,10 @@ class OpenTypeFontFaceInfo {
     if (familyName.trim().isNotEmpty) return familyName;
     return fullName.isNotEmpty ? fullName : postScriptName;
   }
+
+  /// Identifies the selected face when several weights share a family.
+  String get assFaceName =>
+      postScriptName.trim().isEmpty ? assFontName : postScriptName;
 }
 
 class OpenTypeGlyphMetrics {
@@ -193,7 +197,7 @@ class OpenTypeFontFace {
     final fullName =
         _pickName(names, 4) ??
         (subfamily == 'Regular' ? family : '$family $subfamily');
-    final postScript = _pickName(names, 6) ?? fullName.replaceAll(' ', '');
+    final postScript = _pickName(names, 6) ?? '';
 
     return OpenTypeFontFace._(
       bytes: bytes,

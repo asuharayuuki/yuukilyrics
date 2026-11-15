@@ -1,11 +1,61 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yuukilyrics/l10n/generated/app_localizations.dart';
+import 'package:yuukilyrics/screens/ass_export_screen.dart';
 import 'package:yuukilyrics/services/color_preset_library_service.dart';
+import 'package:yuukilyrics/services/font_library_service.dart';
+import 'package:yuukilyrics/services/singer_avatar_library_service.dart';
 import 'package:yuukilyrics/widgets/saved_color_presets_dialog.dart';
 
 void main() {
+  testWidgets('default color editor copies exactly one Markdown row', (
+    tester,
+  ) async {
+    final fonts = _NoopFontLibrary();
+    final avatars = SingerAvatarLibraryService();
+    final colors = ColorPresetLibraryService();
+    addTearDown(fonts.dispose);
+    addTearDown(avatars.dispose);
+    addTearDown(colors.dispose);
+    String? clipboard;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboard = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('ja'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AssExportScreen(
+          onExport: (_) async {},
+          avatarLibrary: avatars,
+          fontLibrary: fonts,
+          colorPresetLibrary: colors,
+          pageState: AssExportPageState(),
+        ),
+      ),
+    );
+    await tester.tap(find.text('デフォルト配色'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('配色コードをコピー'));
+    await tester.pump();
+
+    expect(
+      clipboard,
+      '| デフォルト配色 | #0000AF | #FFFFFF | #FFE196 | #FFFFFF | #000000 | #96BFFF |',
+    );
+  });
+
   testWidgets('import actions use compact buttons', (tester) async {
     final library = ColorPresetLibraryService();
     addTearDown(library.dispose);
@@ -57,4 +107,9 @@ void main() {
     expect(textImportCount, 1);
     expect(n3ImportCount, 1);
   });
+}
+
+class _NoopFontLibrary extends FontLibraryService {
+  @override
+  Future<void> refresh() async {}
 }
