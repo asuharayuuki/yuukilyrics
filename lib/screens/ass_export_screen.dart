@@ -1569,6 +1569,27 @@ class _AssExportScreenState extends State<AssExportScreen> {
     _unsungDecorationColor = colors.unsungDecorationColor;
   }
 
+  SingerColorInfo _currentDefaultColors(String name) => SingerColorInfo(
+    prefix: name,
+    preset: _defaultColorPreset,
+    sungTextColor: _sungTextColor,
+    sungOutlineColor: _sungOutlineColor,
+    sungDecorationColor: _sungDecorationColor,
+    unsungTextColor: _unsungTextColor,
+    unsungOutlineColor: _unsungOutlineColor,
+    unsungDecorationColor: _unsungDecorationColor,
+  );
+
+  List<SingerColorInfo> _singerColorsForMatching() {
+    final promotedName = _pageState._defaultColorName?.trim();
+    if (promotedName == null ||
+        promotedName.isEmpty ||
+        _singerColors.any((singer) => singer.prefix.trim() == promotedName)) {
+      return List.of(_singerColors);
+    }
+    return [_currentDefaultColors(promotedName), ..._singerColors];
+  }
+
   String _serializeCurrentSingerColors() {
     final header = <String>[
       context.l10n.singerName,
@@ -1579,18 +1600,8 @@ class _AssExportScreenState extends State<AssExportScreen> {
       context.l10n.unsungOutlineColor,
       context.l10n.unsungDecorationColor,
     ];
-    final defaultColors = SingerColorInfo(
-      prefix: _defaultColorName,
-      preset: _defaultColorPreset,
-      sungTextColor: _sungTextColor,
-      sungOutlineColor: _sungOutlineColor,
-      sungDecorationColor: _sungDecorationColor,
-      unsungTextColor: _unsungTextColor,
-      unsungOutlineColor: _unsungOutlineColor,
-      unsungDecorationColor: _unsungDecorationColor,
-    );
     final rows = [
-      defaultColors,
+      _currentDefaultColors(_defaultColorName),
       ..._singerColors,
     ].map((singer) => _colorMarkdownRow(singer, singer.prefix.trim()));
     return [
@@ -2027,7 +2038,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
   void _publishActiveColorPresets() {
     widget.colorPresetLibrary.setActivePresets(
-      _singerColors
+      _singerColorsForMatching()
           .where((singer) => singer.prefix.trim().isNotEmpty)
           .map(
             (singer) => _colorPresetFromSinger(singer.prefix.trim(), singer),
@@ -2111,23 +2122,14 @@ class _AssExportScreenState extends State<AssExportScreen> {
   }
 
   Future<void> _showDefaultColorSettings() async {
-    final edited = SingerColorInfo(
-      prefix: _defaultColorName,
-      preset: _defaultColorPreset,
-      sungTextColor: _sungTextColor,
-      sungOutlineColor: _sungOutlineColor,
-      sungDecorationColor: _sungDecorationColor,
-      unsungTextColor: _unsungTextColor,
-      unsungOutlineColor: _unsungOutlineColor,
-      unsungDecorationColor: _unsungDecorationColor,
-    );
     final result = await _showColorSettingsDialog(
-      edited: edited,
+      edited: _currentDefaultColors(_defaultColorName),
       title: _defaultColorName,
       fillPrefixFromPreset: false,
     );
     if (result != null && mounted) {
       setState(() => _setDefaultColors(result));
+      _publishActiveColorPresets();
     }
   }
 
@@ -2529,7 +2531,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
       latinFont: _pageState._latinFont,
       fadeLyricLines: _pageState._fadeLyricLines,
       isBold: _isBold,
-      singerColors: _singerColors,
+      singerColors: _singerColorsForMatching(),
       showSingerPrefixesInAss: _showSingerPrefixesInAss,
       sungTextColor: _sungTextColor,
       sungOutlineColor: _sungOutlineColor,
