@@ -193,6 +193,38 @@ class AppLocalizationsJa extends AppLocalizations {
   String get aboutApp => 'アプリ情報';
 
   @override
+  String get checkForUpdates => 'アップデートを確認';
+
+  @override
+  String get checkingForUpdates => 'アップデートを確認中…';
+
+  @override
+  String get updateAvailable => '新しいバージョンがあります';
+
+  @override
+  String get noUpdateAvailable => 'アップデートはありません';
+
+  @override
+  String get noPublishedRelease => '公開済みの正式リリースはありません';
+
+  @override
+  String get updateCheckFailed => 'アップデートを確認できませんでした。時間をおいて再試行してください。';
+
+  @override
+  String updateVersions(String installed, String latest) {
+    return '現在のバージョン $installed · 最新リリース $latest';
+  }
+
+  @override
+  String get noReleaseNotes => 'このバージョンのリリースノートはありません。';
+
+  @override
+  String get openReleasePage => 'リリースページを開く';
+
+  @override
+  String get releasePageOpenFailed => 'ブラウザーを開けませんでした。';
+
+  @override
   String versionAndBuild(Object version, Object buildNumber) {
     return 'バージョン $version（ビルド $buildNumber）';
   }

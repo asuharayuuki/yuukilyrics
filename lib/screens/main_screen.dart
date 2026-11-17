@@ -9,6 +9,7 @@ import '../widgets/timeline_waveform.dart';
 import '../widgets/lyrics_editor.dart';
 import '../widgets/toolbar_area.dart';
 import '../widgets/tagging_button.dart';
+import '../widgets/update_check_dialog.dart';
 import '../services/media_player_service.dart';
 import '../services/waveform_extractor.dart';
 import '../services/waveform_extractor_router.dart';
@@ -28,6 +29,7 @@ import '../services/font_library_service.dart';
 import '../services/singer_avatar_library_service.dart';
 import '../services/color_preset_library_service.dart';
 import '../services/escape_pod_service.dart';
+import '../services/update_check_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/l10n.dart';
 
@@ -59,6 +61,8 @@ class _MainScreenState extends State<MainScreen> {
   int _mediaLoadGeneration = 0;
 
   int _selectedPageIndex = 0;
+  Future<AppRelease?>? _pendingUpdateCheck;
+  bool _updateDialogOpen = false;
 
   @override
   void initState() {
@@ -72,6 +76,9 @@ class _MainScreenState extends State<MainScreen> {
     _fontLibrary.refresh();
     _colorPresetLibrary.load();
     _loadTypographySettings();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_checkForUpdatesOnStartup());
+    });
   }
 
   Future<void> _loadTypographySettings() async {
@@ -739,6 +746,47 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  Future<AppRelease?> _checkForUpdates(String version) {
+    return _pendingUpdateCheck ??= UpdateCheckService.check(version)
+        .whenComplete(() {
+          _pendingUpdateCheck = null;
+        });
+  }
+
+  Future<void> _checkForUpdatesOnStartup() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      final check = _checkForUpdates(packageInfo.version);
+      final release = await check;
+      if (mounted && release?.isUpdate == true) {
+        await _showUpdateCheckDialog(packageInfo.version, () => check);
+      }
+    } catch (_) {
+      // Startup checks should not interrupt editing on network errors.
+    }
+  }
+
+  Future<void> _showUpdateCheckDialog(
+    String version,
+    Future<AppRelease?> Function() check,
+  ) async {
+    if (_updateDialogOpen) return;
+    _updateDialogOpen = true;
+    try {
+      late final releaseCheck = check();
+      await showDialog<void>(
+        context: context,
+        builder: (_) => UpdateCheckDialog(
+          installedVersion: version,
+          releaseCheck: releaseCheck,
+        ),
+      );
+    } finally {
+      _updateDialogOpen = false;
+    }
+  }
+
   Future<void> _showAboutDialog(BuildContext context) async {
     final packageInfo = await PackageInfo.fromPlatform();
     if (!context.mounted) return;
@@ -747,6 +795,7 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
+          scrollable: true,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -773,6 +822,14 @@ class _MainScreenState extends State<MainScreen> {
                 style: TextStyle(fontSize: 12, color: Colors.white70),
               ),
               const SizedBox(height: 24),
+              TextButton.icon(
+                onPressed: () => _showUpdateCheckDialog(
+                  packageInfo.version,
+                  () => _checkForUpdates(packageInfo.version),
+                ),
+                icon: const Icon(Icons.system_update_alt),
+                label: Text(context.l10n.checkForUpdates),
+              ),
               TextButton.icon(
                 onPressed: () async {
                   final url = Uri.parse('https://space.bilibili.com/53133362');

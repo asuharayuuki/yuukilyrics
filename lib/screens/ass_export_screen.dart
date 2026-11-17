@@ -257,7 +257,8 @@ _SingerColorImportParseResult _parseSingerColorText(
     }
 
     final singerName = fields.first.trim();
-    if (singerName.isEmpty) {
+    final isDefault = defaultColors == null && singerName == defaultColorsName;
+    if (singerName.isEmpty && !isDefault) {
       errors.add(l10n.singerColorImportSingerRequired(index + 1));
       continue;
     }
@@ -303,7 +304,7 @@ _SingerColorImportParseResult _parseSingerColorText(
       unsungOutlineColor: colors[4],
       unsungDecorationColor: colors[5],
     );
-    if (defaultColorsName != null && singerName == defaultColorsName) {
+    if (isDefault) {
       defaultColors = singer;
     } else {
       singersByName[singerName] = singer;
@@ -492,6 +493,7 @@ class AssExportPageState {
     Color(0xFF96BFFF),
   );
   SingerColorPreset _defaultColorPreset = SingerColorPreset.none;
+  String? _defaultColorName;
   double _fontSize = 85.0;
   int _letterSpacingStep = 0;
   double _outlineWidth = 10.0;
@@ -1004,10 +1006,11 @@ class _AssExportScreenState extends State<AssExportScreen> {
       children: [
         _buildSingerColorCard(
           isDefault: true,
-          title: context.l10n.defaultColors,
+          title: _defaultColorName,
           sungColor: _sungTextColor,
           unsungColor: _unsungTextColor,
           onTap: _showDefaultColorSettings,
+          onDelete: _singerColors.isEmpty ? null : _deleteDefaultColor,
         ),
         for (int i = 0; i < _singerColors.length; i++) ...[
           const SizedBox(height: 6),
@@ -1542,6 +1545,30 @@ class _AssExportScreenState extends State<AssExportScreen> {
     _publishActiveColorPresets();
   }
 
+  void _deleteDefaultColor() {
+    if (_singerColors.isEmpty) return;
+    setState(() {
+      final promoted = _singerColors.removeAt(0);
+      _pageState._defaultColorName = promoted.prefix;
+      _setDefaultColors(promoted);
+      _singerControllers.removeAt(0).dispose();
+    });
+    _publishActiveColorPresets();
+  }
+
+  String get _defaultColorName =>
+      _pageState._defaultColorName ?? context.l10n.defaultColors;
+
+  void _setDefaultColors(SingerColorInfo colors) {
+    _defaultColorPreset = colors.preset;
+    _sungTextColor = colors.sungTextColor;
+    _sungOutlineColor = colors.sungOutlineColor;
+    _sungDecorationColor = colors.sungDecorationColor;
+    _unsungTextColor = colors.unsungTextColor;
+    _unsungOutlineColor = colors.unsungOutlineColor;
+    _unsungDecorationColor = colors.unsungDecorationColor;
+  }
+
   String _serializeCurrentSingerColors() {
     final header = <String>[
       context.l10n.singerName,
@@ -1553,7 +1580,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
       context.l10n.unsungDecorationColor,
     ];
     final defaultColors = SingerColorInfo(
-      prefix: context.l10n.defaultColors,
+      prefix: _defaultColorName,
       preset: _defaultColorPreset,
       sungTextColor: _sungTextColor,
       sungOutlineColor: _sungOutlineColor,
@@ -1573,10 +1600,11 @@ class _AssExportScreenState extends State<AssExportScreen> {
     ].join('\n');
   }
 
+  String _colorMarkdownName(String name) =>
+      name.replaceAll('|', '｜').replaceAll(RegExp(r'[\r\n]+'), ' ');
+
   String _colorMarkdownRow(SingerColorInfo singer, String name) {
-    final safeName = name
-        .replaceAll('|', '｜')
-        .replaceAll(RegExp(r'[\r\n]+'), ' ');
+    final safeName = _colorMarkdownName(name);
     final fields = _colorPresetFromSinger(safeName, singer).toMarkdownFields();
     return '| ${fields.join(' | ')} |';
   }
@@ -1590,7 +1618,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
         titleIcon: Icons.code,
         confirmLabel: context.l10n.apply,
         requireAllRowsValid: true,
-        defaultColorsName: context.l10n.defaultColors,
+        defaultColorsName: _colorMarkdownName(_defaultColorName.trim()).trim(),
       ),
     );
     if (result == null || !mounted) return;
@@ -1601,13 +1629,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
     setState(() {
       final defaultColors = result.defaultColors;
       if (defaultColors != null) {
-        _defaultColorPreset = SingerColorPreset.none;
-        _sungTextColor = defaultColors.sungTextColor;
-        _sungOutlineColor = defaultColors.sungOutlineColor;
-        _sungDecorationColor = defaultColors.sungDecorationColor;
-        _unsungTextColor = defaultColors.unsungTextColor;
-        _unsungOutlineColor = defaultColors.unsungOutlineColor;
-        _unsungDecorationColor = defaultColors.unsungDecorationColor;
+        _setDefaultColors(defaultColors);
       }
       _singerColors
         ..clear()
@@ -2090,7 +2112,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
   Future<void> _showDefaultColorSettings() async {
     final edited = SingerColorInfo(
-      prefix: '',
+      prefix: _defaultColorName,
       preset: _defaultColorPreset,
       sungTextColor: _sungTextColor,
       sungOutlineColor: _sungOutlineColor,
@@ -2101,19 +2123,11 @@ class _AssExportScreenState extends State<AssExportScreen> {
     );
     final result = await _showColorSettingsDialog(
       edited: edited,
-      title: context.l10n.defaultColors,
+      title: _defaultColorName,
       fillPrefixFromPreset: false,
     );
     if (result != null && mounted) {
-      setState(() {
-        _defaultColorPreset = result.preset;
-        _sungTextColor = result.sungTextColor;
-        _sungOutlineColor = result.sungOutlineColor;
-        _sungDecorationColor = result.sungDecorationColor;
-        _unsungTextColor = result.unsungTextColor;
-        _unsungOutlineColor = result.unsungOutlineColor;
-        _unsungDecorationColor = result.unsungDecorationColor;
-      });
+      setState(() => _setDefaultColors(result));
     }
   }
 
@@ -2892,7 +2906,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
         left: 12,
         top: 8,
         bottom: 8,
-        right: isDefault ? 16 : 8,
+        right: onDelete == null ? 16 : 8,
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 48),
@@ -2940,7 +2954,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
                 ),
               ),
             ),
-            if (!isDefault) ...[
+            if (onDelete != null) ...[
               const SizedBox(width: 4),
               IconButton(
                 icon: const Icon(Icons.delete_outline),

@@ -66,6 +66,22 @@
   "assetLibrary": "素材ライブラリ",
   "fontLibrary": "フォントライブラリ",
   "aboutApp": "アプリ情報",
+  "checkForUpdates": "アップデートを確認",
+  "checkingForUpdates": "アップデートを確認中…",
+  "updateAvailable": "新しいバージョンがあります",
+  "noUpdateAvailable": "アップデートはありません",
+  "noPublishedRelease": "公開済みの正式リリースはありません",
+  "updateCheckFailed": "アップデートを確認できませんでした。時間をおいて再試行してください。",
+  "updateVersions": "現在のバージョン {installed} · 最新リリース {latest}",
+  "@updateVersions": {
+    "placeholders": {
+      "installed": {"type": "String"},
+      "latest": {"type": "String"}
+    }
+  },
+  "noReleaseNotes": "このバージョンのリリースノートはありません。",
+  "openReleasePage": "リリースページを開く",
+  "releasePageOpenFailed": "ブラウザーを開けませんでした。",
   "versionAndBuild": "バージョン {version}（ビルド {buildNumber}）",
   "@versionAndBuild": {
     "placeholders": {

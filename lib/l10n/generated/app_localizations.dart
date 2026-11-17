@@ -410,6 +410,66 @@ abstract class AppLocalizations {
   /// **'アプリ情報'**
   String get aboutApp;
 
+  /// No description provided for @checkForUpdates.
+  ///
+  /// In ja, this message translates to:
+  /// **'アップデートを確認'**
+  String get checkForUpdates;
+
+  /// No description provided for @checkingForUpdates.
+  ///
+  /// In ja, this message translates to:
+  /// **'アップデートを確認中…'**
+  String get checkingForUpdates;
+
+  /// No description provided for @updateAvailable.
+  ///
+  /// In ja, this message translates to:
+  /// **'新しいバージョンがあります'**
+  String get updateAvailable;
+
+  /// No description provided for @noUpdateAvailable.
+  ///
+  /// In ja, this message translates to:
+  /// **'アップデートはありません'**
+  String get noUpdateAvailable;
+
+  /// No description provided for @noPublishedRelease.
+  ///
+  /// In ja, this message translates to:
+  /// **'公開済みの正式リリースはありません'**
+  String get noPublishedRelease;
+
+  /// No description provided for @updateCheckFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'アップデートを確認できませんでした。時間をおいて再試行してください。'**
+  String get updateCheckFailed;
+
+  /// No description provided for @updateVersions.
+  ///
+  /// In ja, this message translates to:
+  /// **'現在のバージョン {installed} · 最新リリース {latest}'**
+  String updateVersions(String installed, String latest);
+
+  /// No description provided for @noReleaseNotes.
+  ///
+  /// In ja, this message translates to:
+  /// **'このバージョンのリリースノートはありません。'**
+  String get noReleaseNotes;
+
+  /// No description provided for @openReleasePage.
+  ///
+  /// In ja, this message translates to:
+  /// **'リリースページを開く'**
+  String get openReleasePage;
+
+  /// No description provided for @releasePageOpenFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'ブラウザーを開けませんでした。'**
+  String get releasePageOpenFailed;
+
   /// No description provided for @versionAndBuild.
   ///
   /// In ja, this message translates to:

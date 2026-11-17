@@ -193,6 +193,38 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutApp => '关于应用';
 
   @override
+  String get checkForUpdates => '检查更新';
+
+  @override
+  String get checkingForUpdates => '正在检查更新…';
+
+  @override
+  String get updateAvailable => '发现新版本';
+
+  @override
+  String get noUpdateAvailable => '当前已是最新版本';
+
+  @override
+  String get noPublishedRelease => '暂无已发布的正式版本';
+
+  @override
+  String get updateCheckFailed => '无法检查更新，请稍后重试。';
+
+  @override
+  String updateVersions(String installed, String latest) {
+    return '当前版本 $installed · 最新发布 $latest';
+  }
+
+  @override
+  String get noReleaseNotes => '此版本没有发布说明。';
+
+  @override
+  String get openReleasePage => '打开发布页面';
+
+  @override
+  String get releasePageOpenFailed => '无法打开浏览器。';
+
+  @override
   String versionAndBuild(Object version, Object buildNumber) {
     return '版本 $version（构建号 $buildNumber）';
   }

@@ -11,7 +11,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'current singer color source includes and applies default colors',
+    'current color source applies default edits and reflects first-row promotion',
     (tester) async {
       final avatars = SingerAvatarLibraryService();
       final fonts = FontLibraryService();
@@ -81,6 +81,49 @@ void main() {
         hasLength(1),
       );
       expect(reappliedSource, contains('#123456'));
+
+      const firstPalette =
+          '#111111 | #222222 | #333333 | #444444 | #555555 | #666666';
+      const secondPalette =
+          '#777777 | #888888 | #999999 | #AAAAAA | #BBBBBB | #CCCCCC';
+      final dialogField = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(
+        dialogField,
+        '$reappliedSource\n| Singer A | $firstPalette |'
+        '\n| Singer B | $secondPalette |',
+      );
+      await tester.tap(find.text('应用'));
+      await tester.pumpAndSettle();
+
+      final delete = find.byTooltip('删除');
+      expect(delete, findsNWidgets(3));
+      await tester.tap(delete.first);
+      await tester.pumpAndSettle();
+      expect(delete, findsNWidgets(2));
+      expect(find.text('Singer A'), findsOneWidget);
+      expect(find.text('默认配色'), findsNothing);
+      expect(find.text('Singer B'), findsOneWidget);
+
+      await tester.tap(find.text('源代码'));
+      await tester.pumpAndSettle();
+      final promotedSource = tester
+          .widget<TextField>(dialogField)
+          .controller!
+          .text;
+      expect(promotedSource, contains('| Singer A | $firstPalette |'));
+      expect(promotedSource, contains('| Singer B | $secondPalette |'));
+      expect(promotedSource, isNot(contains('#123456')));
+      await tester.tap(find.text('应用'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(delete.first);
+      await tester.pumpAndSettle();
+      expect(delete, findsNothing);
+      expect(find.text('Singer B'), findsOneWidget);
+      expect(find.text('默认配色'), findsNothing);
     },
   );
 }
