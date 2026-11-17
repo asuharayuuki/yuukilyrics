@@ -1,78 +1,78 @@
 # YuukiLyrics
 
-YuukiLyrics is a cross-platform karaoke lyric editor for creating timed lyrics, previewing them with media, and exporting polished subtitles or videos. It is designed for creators who want RhythmicaLyrics-style timing work, rich Japanese lyric notation, and flexible ASS subtitle output in one focused desktop/mobile tool.
+YuukiLyrics is a karaoke lyric editor for desktop and mobile. Time lyrics against audio or video, edit Japanese furigana, and export styled ASS subtitles or a video with the subtitles burned in. The editor supports RhythmicaLyrics-style timing notation.
 
-## What It Does
+**[Download the latest release](https://github.com/asuharayuuki/yuukilyrics/releases/latest)**
 
-YuukiLyrics helps you prepare karaoke-ready lyrics from draft text and media files. You can load audio or video, align lyrics to playback, refine readings and timing, preview the result, and export files that are ready for subtitle rendering or video production.
+<img src="docs/screenshots/main-window.png" alt="YuukiLyrics main window on mobile" width="240">
 
-The app is especially suited for Japanese karaoke workflows, multi-singer lyrics, ruby/furigana notation, styled subtitle exports, and projects that need careful control over how lyrics appear on screen.
+## Install
 
-## Highlights
+Choose the package for your device from the release page.
 
-- Visual lyric timing with media playback, waveform guidance, and quick timestamp entry.
-- A comfortable editor for both structured lyric work and direct LRC text editing.
-- Support for extended LRC workflows, including ruby text and RhythmicaLyrics-friendly timing notation.
-- Rich ASS subtitle output with karaoke-style progression, color styling, typography controls, and preview support.
-- Multi-singer presentation options, including singer-specific colors and small avatar-style lyric accents.
-- Flexible font handling for Japanese and English text, including custom fonts and serif-oriented subtitle layouts.
-- Video export that can burn the generated subtitles directly into the source media.
-- A dark, compact interface built for repeated editing rather than a one-off export wizard.
+| Platform | Package | How to run |
+| --- | --- | --- |
+| Windows x64 | `-windows-x64.zip` | Extract the entire ZIP and run `yuukilyrics.exe` from the extracted folder. |
+| macOS (Apple silicon and Intel) | `-macos-universal-release.zip` | Extract the ZIP and open `yuukilyrics.app`. |
+| Linux x64 | `-linux-x64-release.tar.gz` | Extract the archive and run `yuukilyrics` from the extracted folder. |
+| Android arm64 | `-android-arm64-release.apk` | Install the APK on your device. |
+| iOS arm64 | `-ios-arm64-unsigned.ipa` | Sign and sideload the IPA before opening it. |
 
-## Platforms
+### FFmpeg
 
-| Platform | Status | Distribution |
-|----------|--------|--------------|
-| Windows  | Supported | Manual build |
-| Android  | Supported | APK via GitHub Actions |
-| iOS      | Supported | Unsigned IPA via GitHub Actions |
-| macOS    | Supported | Manual build |
-| Linux    | Supported | Manual build |
+- **Windows:** Install an [FFmpeg](https://ffmpeg.org/download.html) build with libass and add it to `PATH`. The official ZIP does not include a standalone `ffmpeg.exe`. Waveform extraction, ASS style previews, and video export use this executable.
+- **macOS and Linux:** Install `ffmpeg` and make sure the app can find it on `PATH` for waveform extraction. ASS style previews and video export use the bundled FFmpegKit runtime.
+- **Android and iOS:** FFmpegKit is included. No separate FFmpeg installation is needed.
 
-## Installation
+## Quick start
 
-Pre-built binaries for Android and iOS are available through GitHub Actions:
+The interface is available in Japanese and Simplified Chinese.
 
-1. Go to the [Actions](https://github.com/asuharayuuki/yuukilyrics/actions) page.
-2. Select the latest successful workflow run for your platform.
-3. Download the artifact from the Artifacts section at the bottom of the run page.
+1. Open an audio or video file and load lyrics from a `.lrc` or `.txt` file. You can also paste lyrics in the text editor.
+2. Open the timing editor. Use the waveform and playback speed controls to find where the vocals start. Use **Auto Ruby & Checks** to add Japanese furigana and timing points, or set them manually.
+3. Record timestamps as the song plays. Use the text editor to edit the underlying timing tags and furigana directly.
+4. Open **ASS Export**, adjust fonts, layout, and singer colors, then preview the subtitles over the loaded media.
+5. Export timed lyrics as text or save the `.ass` file. When the loaded media is a video, you can also export a copy with subtitles burned in.
 
-> Note: The iOS IPA is unsigned. You will need to sign it yourself or use a sideloading tool such as [AltStore](https://altstore.io/) or [SideStore](https://sidestore.io/).
+![Example of karaoke subtitles in an exported video](docs/screenshots/video-export-style.png)
 
-### Prerequisites
+## Styling and libraries
 
-- Windows: YuukiLyrics can use a bundled `ffmpeg.exe` when included with the app, or a system FFmpeg installation from `PATH`.
-- Linux: [FFmpeg](https://ffmpeg.org/) must be installed and available on your `PATH`.
-- Android, iOS, and macOS: FFmpeg support is provided through the bundled mobile/macOS runtime package.
+- Assign singer colors and avatars, and store reusable color presets. Edit palettes as Markdown or import colors from NicoKaraMaker3 projects.
+- Choose separate fonts for Latin text and Japanese lyrics, with controls for furigana size, outlines, spacing, and line fades.
+- Use **Escape Pod** in the About dialog to export or restore a ZIP of fonts, singer avatars, and color presets.
 
-## Building from Source
+Use the [online Markdown style editor](https://scheme.suisei.eu.org/) to edit singer palettes in your browser.
 
-```bash
+![Online Markdown style editor for YuukiLyrics singer palettes](docs/screenshots/markdown-style-editor.png)
+
+## Check for updates
+
+YuukiLyrics checks GitHub for a new stable release at startup. When an update is available, the dialog shows the release notes and offers a button to open the release page in your browser. To check manually, open **About → Check for Updates**.
+
+## Build from source
+
+CI uses **Flutter 3.47.0**. Install Flutter and the native toolchain for your target platform, then run:
+
+```sh
 git clone https://github.com/asuharayuuki/yuukilyrics.git
 cd yuukilyrics
 flutter pub get
 flutter run
 ```
 
-Release builds can be created with the usual Flutter targets:
+To build for a specific platform:
 
-```bash
-flutter build windows
-flutter build apk --target-platform android-arm64
-flutter build ios
-flutter build macos
-flutter build linux
+```sh
+flutter build windows --release
+flutter build macos --release
+flutter build linux --release
+flutter build apk --release --target-platform android-arm64
+flutter build ios --release --no-codesign
 ```
 
-Requires Flutter SDK on the stable channel with Dart SDK 3.11.5 or newer.
-
-## Tech Stack
-
-- [Flutter](https://flutter.dev/) for the cross-platform application.
-- [media_kit](https://pub.dev/packages/media_kit) for media playback.
-- [FFmpeg](https://ffmpeg.org/) and [ffmpeg_kit_flutter_new](https://pub.dev/packages/ffmpeg_kit_flutter_new) for waveform, subtitle, and video processing.
-- [Google Fonts](https://pub.dev/packages/google_fonts) for the application UI typography.
+Build iOS and macOS targets on macOS. The iOS command produces an unsigned app. See the [CI workflows](.github/workflows/) for platform dependencies, packaging, and signing steps. Run `flutter test` to run the test suite.
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+YuukiLyrics is licensed under the [GNU General Public License v3.0](LICENSE).
