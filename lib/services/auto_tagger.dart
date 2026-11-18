@@ -1,6 +1,7 @@
 import 'package:characters/characters.dart';
 
 import '../models/lyric_ast.dart';
+import 'singer_markers.dart';
 
 class TextToken {
   final String text;
@@ -17,8 +18,12 @@ class AutoTagger {
   /// Inserts check tags in place for every line in [lines]: a `[1]` before
   /// each readable token or untagged ruby, `[10]` between non-Latin words
   /// separated by spaces, and a line-end `[10]`.
-
-  static void tagLines(List<LyricLine> lines) {
+  ///
+  /// Text matching one of [markers] (singer line-color prefixes) is not
+  /// lyrics: it gets no check of its own, is never split, and is placed
+  /// before the check of the syllable that follows it.
+  static void tagLines(List<LyricLine> lines, {SingerMarkers? markers}) {
+    final singerMarkers = markers ?? SingerMarkers.none;
     for (int li = 0; li < lines.length; li++) {
       final line = lines[li];
 
@@ -64,35 +69,11 @@ class AutoTagger {
             newNodes.add(node);
           }
         } else if (node is LyricText) {
-          bool isCovered =
-              newNodes.isNotEmpty &&
-              newNodes.last is LyricTimeTag &&
-              (newNodes.last as LyricTimeTag).type != 10;
-
-          final tokens = tokenize(node.text);
-          for (int i = 0; i < tokens.length; i++) {
-            final token = tokens[i];
-
-            // Do not add tag for purely whitespace or punctuation tokens
-            bool hasReadableText = RegExp(
-              r'[a-zA-Z0-9\uFF10-\uFF19\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF]',
-            ).hasMatch(token.text);
-            if (!hasReadableText) {
-              newNodes.add(LyricText(token.text));
-              if (token.addTag10) {
-                newNodes.add(LyricTimeTag(type: 10, time: ''));
-              }
-              continue;
-            }
-
-            if (i == 0 && isCovered) {
-              newNodes.add(LyricText(token.text));
-            } else {
-              newNodes.add(LyricTimeTag(type: 1, time: ''));
-              newNodes.add(LyricText(token.text));
-            }
-            if (token.addTag10) {
-              newNodes.add(LyricTimeTag(type: 10, time: ''));
+          for (final segment in singerMarkers.split(node.text)) {
+            if (segment.isMarker) {
+              _addMarker(newNodes, segment.text);
+            } else if (segment.text.isNotEmpty) {
+              _addLyricText(newNodes, segment.text);
             }
           }
         } else {
@@ -107,7 +88,10 @@ class AutoTagger {
 
         // Only add line-end [10] if the line contains actual non-whitespace text
         bool hasContent = newNodes.any(
-          (n) => n is LyricRuby || (n is LyricText && n.text.trim().isNotEmpty),
+          (n) =>
+              n is LyricRuby ||
+              (n is LyricText &&
+                  singerMarkers.stripMarkers(n.text).trim().isNotEmpty),
         );
         if (hasContent && !alreadyHasEndTag) {
           newNodes.add(LyricTimeTag(type: 10, time: ''));
@@ -128,6 +112,51 @@ class AutoTagger {
 
       line.nodes.clear();
       line.nodes.addAll(mergedNodes);
+    }
+  }
+
+  /// Puts [marker] before a directly preceding check, so the check keeps
+  /// timing the next visible syllable instead of the invisible marker.
+  static void _addMarker(List<LyricNode> nodes, String marker) {
+    final last = nodes.lastOrNull;
+    if (last is LyricTimeTag && last.type != 10) {
+      nodes.insert(nodes.length - 1, LyricText(marker));
+    } else {
+      nodes.add(LyricText(marker));
+    }
+  }
+
+  static void _addLyricText(List<LyricNode> nodes, String text) {
+    final isCovered =
+        nodes.isNotEmpty &&
+        nodes.last is LyricTimeTag &&
+        (nodes.last as LyricTimeTag).type != 10;
+
+    final tokens = tokenize(text);
+    for (int i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+
+      // Do not add tag for purely whitespace or punctuation tokens
+      bool hasReadableText = RegExp(
+        r'[a-zA-Z0-9\uFF10-\uFF19\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF]',
+      ).hasMatch(token.text);
+      if (!hasReadableText) {
+        nodes.add(LyricText(token.text));
+        if (token.addTag10) {
+          nodes.add(LyricTimeTag(type: 10, time: ''));
+        }
+        continue;
+      }
+
+      if (i == 0 && isCovered) {
+        nodes.add(LyricText(token.text));
+      } else {
+        nodes.add(LyricTimeTag(type: 1, time: ''));
+        nodes.add(LyricText(token.text));
+      }
+      if (token.addTag10) {
+        nodes.add(LyricTimeTag(type: 10, time: ''));
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart' show StringCharacters;
 import '../models/lyric_ast.dart';
 import '../parser/lrc_parser.dart';
 import 'auto_tagger.dart';
+import 'singer_markers.dart';
 import 'text_file_decoder.dart';
 import 'yahoo_furigana_client.dart';
 
@@ -313,19 +314,15 @@ class LyricsStateService extends ChangeNotifier {
         .firstOrNull;
     if (selectedPrefix != null) return selectedPrefix;
 
+    // Scan like the ASS exporter does, so the highlighted marker is the one
+    // that colors the selection. Picking the occurrence that starts last
+    // would read the `B` inside a preceding `A/B` as the active singer.
+    final markers = SingerMarkers(candidates);
     for (var index = lineIndex; index >= 0; index--) {
       final plainText = index == lineIndex
           ? _plainTextBeforeSelection(_document!.lines[index])
           : _plainText(_document!.lines[index]);
-      String? match;
-      var matchOffset = -1;
-      for (final candidate in candidates) {
-        final offset = plainText.lastIndexOf(candidate);
-        if (offset > matchOffset) {
-          match = candidate;
-          matchOffset = offset;
-        }
-      }
+      final match = markers.lastMarker(plainText);
       if (match != null) return match;
     }
     return null;
@@ -989,7 +986,12 @@ class LyricsStateService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateRubyText(String newRubyText) {
+  /// Sets the reading of the selected text, turning it into ruby if needed.
+  ///
+  /// A singer marker at the start of the selection stays outside the ruby
+  /// base: inside it, the exporter could no longer find the marker and would
+  /// draw it as lyrics in the wrong color.
+  void updateRubyText(String newRubyText, {SingerMarkers? markers}) {
     if (!_selectionIsValid()) return;
     final li = _selectionPath![0];
     final ni = _selectionPath![1];
@@ -1023,12 +1025,17 @@ class LyricsStateService extends ChangeNotifier {
 
         if (charOffset >= 0 && charOffset < text.length) {
           final selectedEnd = _selectedTextEnd(text, charOffset);
-          final targetText = text.substring(charOffset, selectedEnd);
-          final leftText = text.substring(0, charOffset);
+          var start = charOffset;
+          final marker = markers?.markerAt(text, start);
+          if (marker != null) start += marker.length;
+          // Only a marker was selected; it cannot carry a reading.
+          if (start >= selectedEnd) return;
+          final targetText = text.substring(start, selectedEnd);
+          final leftText = text.substring(0, start);
           final rightText = text.substring(selectedEnd);
 
           bool hasPrecedingTag =
-              (charOffset == 0 &&
+              (start == 0 &&
               ni > 0 &&
               line.nodes[ni - 1] is LyricTimeTag &&
               (line.nodes[ni - 1] as LyricTimeTag).type != 10);
@@ -1422,8 +1429,12 @@ class LyricsStateService extends ChangeNotifier {
   /// replaced while a request is in flight, nothing is changed and
   /// [AutoRubyOutcome.documentChanged] is returned. Network and API errors
   /// are rethrown without modifying the document.
+  ///
+  /// Text matching [markers] (singer line-color prefixes) is never sent for
+  /// a reading and never tagged, so a marker such as `結城` keeps working.
   Future<AutoRubyOutcome> autoRubyAndTagDocument({
     YahooFuriganaClient client = const YahooFuriganaClient(),
+    SingerMarkers? markers,
     void Function(AutoRubyProgress progress)? onProgress,
     bool Function()? isCancelled,
   }) async {
@@ -1431,14 +1442,20 @@ class LyricsStateService extends ChangeNotifier {
     if (document == null) return AutoRubyOutcome.completed;
     bool cancelled() => isCancelled?.call() ?? false;
 
+    final singerMarkers = markers ?? SingerMarkers.none;
     final jobs = <_RubyJob>[];
-    final needsReading = RegExp(r'[a-zA-Z一-龯]');
+    final needsReading = RegExp(r'[a-zA-Z\u4E00-\u9FAF]');
     for (int li = 0; li < document.lines.length; li++) {
       final line = document.lines[li];
       for (int ni = 0; ni < line.nodes.length; ni++) {
         final node = line.nodes[ni];
-        if (node is LyricText && needsReading.hasMatch(node.text)) {
-          jobs.add(_RubyJob(li, ni, node));
+        if (node is! LyricText) continue;
+        final segments = singerMarkers.split(node.text);
+        for (var si = 0; si < segments.length; si++) {
+          final segment = segments[si];
+          if (!segment.isMarker && needsReading.hasMatch(segment.text)) {
+            jobs.add(_RubyJob(li, ni, si, segment.text));
+          }
         }
       }
     }
@@ -1449,18 +1466,19 @@ class LyricsStateService extends ChangeNotifier {
     var currentBatch = <_RubyJob>[];
     var currentBatchChars = 0;
     for (final job in jobs) {
-      if (currentBatchChars + job.node.text.length > maxCharsPerBatch &&
+      if (currentBatchChars + job.text.length > maxCharsPerBatch &&
           currentBatch.isNotEmpty) {
         batches.add(currentBatch);
         currentBatch = [];
         currentBatchChars = 0;
       }
       currentBatch.add(job);
-      currentBatchChars += job.node.text.length + 1;
+      currentBatchChars += job.text.length + 1;
     }
     if (currentBatch.isNotEmpty) batches.add(currentBatch);
 
-    final jobResults = <int, Map<int, List<LyricNode>>>{};
+    // line -> (node, segment) -> fetched nodes
+    final jobResults = <int, Map<(int, int), List<LyricNode>>>{};
     var wasCancelled = false;
     for (var i = 0; i < batches.length; i++) {
       if (cancelled()) {
@@ -1472,7 +1490,7 @@ class LyricsStateService extends ChangeNotifier {
       );
       final batch = batches[i];
       final batchResults = await client.fetchBatch(
-        batch.map((job) => job.node.text).toList(),
+        batch.map((job) => job.text).toList(),
       );
       // Indices in the jobs refer to the document as it was when we started.
       if (!identical(_document, document)) {
@@ -1480,7 +1498,8 @@ class LyricsStateService extends ChangeNotifier {
       }
       for (var j = 0; j < batch.length; j++) {
         final job = batch[j];
-        (jobResults[job.lineIndex] ??= {})[job.nodeIndex] = batchResults[j];
+        (jobResults[job.lineIndex] ??= {})[(job.nodeIndex, job.segmentIndex)] =
+            batchResults[j];
       }
     }
     if (!wasCancelled && cancelled()) wasCancelled = true;
@@ -1500,24 +1519,32 @@ class LyricsStateService extends ChangeNotifier {
       final newNodes = <LyricNode>[];
       for (int ni = 0; ni < line.nodes.length; ni++) {
         final node = line.nodes[ni];
-        final rubyNodes = lineResults[ni];
-        if (rubyNodes == null ||
-            rubyNodes.isEmpty ||
-            node is! LyricText ||
-            _rubyResultSurface(rubyNodes) != node.text) {
+        if (node is! LyricText ||
+            !lineResults.keys.any((key) => key.$1 == ni)) {
           newNodes.add(node);
           continue;
         }
-        // Move a timed check that precedes the word onto its first ruby.
-        if ((rubyNodes.first, newNodes.lastOrNull) case (
-          LyricRuby ruby,
-          LyricTimeTag(type: final type, time: final time),
-        ) when type != 10 && time.isNotEmpty) {
-          final start = ruby.rubyNodes.first as LyricTimeTag;
-          ruby.rubyNodes[0] = LyricTimeTag(type: start.type, time: time);
-          newNodes.removeLast();
+        final segments = singerMarkers.split(node.text);
+        for (var si = 0; si < segments.length; si++) {
+          final segment = segments[si];
+          final rubyNodes = lineResults[(ni, si)];
+          if (rubyNodes == null ||
+              rubyNodes.isEmpty ||
+              _rubyResultSurface(rubyNodes) != segment.text) {
+            newNodes.add(LyricText(segment.text));
+            continue;
+          }
+          // Move a timed check that precedes the word onto its first ruby.
+          if ((rubyNodes.first, newNodes.lastOrNull) case (
+            LyricRuby ruby,
+            LyricTimeTag(type: final type, time: final time),
+          ) when type != 10 && time.isNotEmpty) {
+            final start = ruby.rubyNodes.first as LyricTimeTag;
+            ruby.rubyNodes[0] = LyricTimeTag(type: start.type, time: time);
+            newNodes.removeLast();
+          }
+          newNodes.addAll(rubyNodes);
         }
-        newNodes.addAll(rubyNodes);
       }
       line.nodes
         ..clear()
@@ -1534,9 +1561,9 @@ class LyricsStateService extends ChangeNotifier {
       AutoTagger.tagLines([
         for (final MapEntry(key: li, value: results) in jobResults.entries)
           if (results.length == jobCounts[li]) document.lines[li],
-      ]);
+      ], markers: singerMarkers);
     } else {
-      AutoTagger.tagLines(document.lines);
+      AutoTagger.tagLines(document.lines, markers: singerMarkers);
     }
 
     _syncRawText();
@@ -1554,9 +1581,11 @@ class LyricsStateService extends ChangeNotifier {
   }).join();
 }
 
+/// One lyric (non-marker) segment of a text node that needs a reading.
 class _RubyJob {
   final int lineIndex;
   final int nodeIndex;
-  final LyricText node;
-  _RubyJob(this.lineIndex, this.nodeIndex, this.node);
+  final int segmentIndex;
+  final String text;
+  _RubyJob(this.lineIndex, this.nodeIndex, this.segmentIndex, this.text);
 }

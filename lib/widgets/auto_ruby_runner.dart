@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
 import '../services/lyrics_state_service.dart';
+import '../services/singer_markers.dart';
 import '../services/yahoo_furigana_client.dart';
 
 /// Runs [LyricsStateService.autoRubyAndTagDocument] behind a modal progress
@@ -10,6 +11,7 @@ Future<void> runAutoRubyWithProgress(
   BuildContext context,
   LyricsStateService lyrics, {
   YahooFuriganaClient client = const YahooFuriganaClient(),
+  SingerMarkers? markers,
 }) async {
   if (lyrics.document == null) return;
   final l10n = context.l10n;
@@ -19,7 +21,11 @@ Future<void> runAutoRubyWithProgress(
     context: context,
     barrierDismissible: false,
     useRootNavigator: true,
-    builder: (_) => _AutoRubyProgressDialog(lyrics: lyrics, client: client),
+    builder: (_) => _AutoRubyProgressDialog(
+      lyrics: lyrics,
+      client: client,
+      markers: markers,
+    ),
   );
   if (result == null) return;
 
@@ -41,8 +47,13 @@ class _AutoRubyResult {
 class _AutoRubyProgressDialog extends StatefulWidget {
   final LyricsStateService lyrics;
   final YahooFuriganaClient client;
+  final SingerMarkers? markers;
 
-  const _AutoRubyProgressDialog({required this.lyrics, required this.client});
+  const _AutoRubyProgressDialog({
+    required this.lyrics,
+    required this.client,
+    this.markers,
+  });
 
   @override
   State<_AutoRubyProgressDialog> createState() =>
@@ -64,6 +75,7 @@ class _AutoRubyProgressDialogState extends State<_AutoRubyProgressDialog> {
     try {
       final outcome = await widget.lyrics.autoRubyAndTagDocument(
         client: widget.client,
+        markers: widget.markers,
         isCancelled: () => _stopRequested,
         onProgress: (update) {
           if (mounted) setState(() => _progress = update);

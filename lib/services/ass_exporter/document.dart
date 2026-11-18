@@ -39,6 +39,33 @@ _ProcessedSingerLine _replaceSingerPrefixes({
   var hasVisibleLyrics = false;
 
   for (final node in sourceLine.nodes) {
+    // Older edits could pull a marker into a ruby base (`{A歌|か}`). Split it
+    // off so it still switches the color instead of being drawn as lyrics.
+    if (node is LyricRuby && sortedSingers.isNotEmpty) {
+      final match = sortedSingers
+          .where((s) => node.baseText.startsWith(s.singer.prefix))
+          .firstOrNull;
+      if (match != null && node.baseText.length > match.singer.prefix.length) {
+        currentSingerIndex = match.singerIndex;
+        if (!hasVisibleLyrics) leadingSingerIndex = currentSingerIndex;
+        nodes.add(
+          _SingerMarkerNode(
+            singerIndex: currentSingerIndex,
+            isLeading: !hasVisibleLyrics,
+            displayText: showPrefixes ? match.singer.prefix : '',
+          ),
+        );
+        nodes.add(
+          LyricRuby(
+            baseText: node.baseText.substring(match.singer.prefix.length),
+            rubyNodes: node.rubyNodes,
+            joinNext: node.joinNext,
+          ),
+        );
+        hasVisibleLyrics = true;
+        continue;
+      }
+    }
     if (node is! LyricText || sortedSingers.isEmpty) {
       nodes.add(node);
       if (node is LyricRuby) hasVisibleLyrics = true;

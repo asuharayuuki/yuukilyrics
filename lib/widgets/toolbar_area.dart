@@ -5,6 +5,7 @@ import '../services/color_preset_library_service.dart';
 import '../models/color_preset_asset.dart';
 import '../models/lyric_ast.dart';
 import '../l10n/l10n.dart';
+import '../services/singer_markers.dart';
 import 'auto_ruby_runner.dart';
 import 'dual_color_preview.dart';
 
@@ -57,6 +58,11 @@ class _ToolbarAreaState extends State<ToolbarArea> {
     super.dispose();
   }
 
+  /// Saved color preset names double as the singer markers that the line
+  /// color palette inserts into the lyrics.
+  SingerMarkers get _singerMarkers =>
+      SingerMarkers(_colorPresets.map((preset) => preset.name));
+
   void _onColorPresetsChanged() {
     if (!mounted) return;
     setState(() {
@@ -68,7 +74,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
     // Keep the AST in sync during IME composition as well. Some input methods
     // commit by only clearing the composing range, which does not trigger a
     // second onChanged callback when the text itself stays the same.
-    widget.lyricsState.updateRubyText(value);
+    widget.lyricsState.updateRubyText(value, markers: _singerMarkers);
   }
 
   void _onStateChanged() {
@@ -208,8 +214,11 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                     _buildToolBtn(
                       tooltip: context.l10n.autoRubyAndChecks,
                       icon: const Icon(Icons.auto_fix_high),
-                      onPressed: () =>
-                          runAutoRubyWithProgress(context, widget.lyricsState),
+                      onPressed: () => runAutoRubyWithProgress(
+                        context,
+                        widget.lyricsState,
+                        markers: _singerMarkers,
+                      ),
                     ),
 
                     const _Divider(),
