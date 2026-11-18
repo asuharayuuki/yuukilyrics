@@ -7,6 +7,8 @@ import 'package:http/testing.dart';
 import 'package:yuukilyrics/l10n/generated/app_localizations.dart';
 import 'package:yuukilyrics/models/lyric_ast.dart';
 import 'package:yuukilyrics/services/lyrics_state_service.dart';
+import 'package:yuukilyrics/services/yahoo_furigana_client.dart';
+import 'package:yuukilyrics/widgets/auto_ruby_runner.dart';
 
 void main() {
   testWidgets('auto ruby isolates okurigana and preserves the first time tag', (
@@ -23,40 +25,43 @@ void main() {
         home: Builder(
           builder: (context) => Scaffold(
             body: TextButton(
-              onPressed: () => http.runWithClient(
-                () => lyrics.autoRubyAndTagDocument(context),
-                () => MockClient((request) async {
-                  final body = jsonDecode(request.body) as Map;
-                  expect((body['params'] as Map)['q'], '振る今日');
-                  return http.Response(
-                    jsonEncode({
-                      'result': {
-                        'word': [
-                          {
-                            'surface': '振る',
-                            'furigana': 'ふる',
-                            'subword': [
-                              {'surface': '振', 'furigana': 'ふ'},
-                              {'surface': 'る'},
-                            ],
-                          },
-                          {
-                            'surface': '今日',
-                            'furigana': 'きょう',
-                            'subword': [
-                              {'surface': '今', 'furigana': 'いま'},
-                              {'surface': '日', 'furigana': 'ひ'},
-                            ],
-                          },
-                        ],
+              onPressed: () => runAutoRubyWithProgress(
+                context,
+                lyrics,
+                client: YahooFuriganaClient(
+                  httpClient: MockClient((request) async {
+                    final body = jsonDecode(request.body) as Map;
+                    expect((body['params'] as Map)['q'], '振る今日');
+                    return http.Response(
+                      jsonEncode({
+                        'result': {
+                          'word': [
+                            {
+                              'surface': '振る',
+                              'furigana': 'ふる',
+                              'subword': [
+                                {'surface': '振', 'furigana': 'ふ'},
+                                {'surface': 'る'},
+                              ],
+                            },
+                            {
+                              'surface': '今日',
+                              'furigana': 'きょう',
+                              'subword': [
+                                {'surface': '今', 'furigana': 'いま'},
+                                {'surface': '日', 'furigana': 'ひ'},
+                              ],
+                            },
+                          ],
+                        },
+                      }),
+                      200,
+                      headers: {
+                        'content-type': 'application/json; charset=utf-8',
                       },
-                    }),
-                    200,
-                    headers: {
-                      'content-type': 'application/json; charset=utf-8',
-                    },
-                  );
-                }),
+                    );
+                  }),
+                ),
               ),
               child: const Text('Annotate'),
             ),

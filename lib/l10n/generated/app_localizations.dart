@@ -326,6 +326,30 @@ abstract class AppLocalizations {
   /// **'動画を保存しました：{path}'**
   String videoSaved(Object path);
 
+  /// No description provided for @videoExportComplete.
+  ///
+  /// In ja, this message translates to:
+  /// **'動画を書き出しました'**
+  String get videoExportComplete;
+
+  /// No description provided for @videoSavedToGallery.
+  ///
+  /// In ja, this message translates to:
+  /// **'ギャラリーの「{album}」アルバムに保存しました。'**
+  String videoSavedToGallery(Object album);
+
+  /// No description provided for @videoGallerySaveFailed.
+  ///
+  /// In ja, this message translates to:
+  /// **'ギャラリーに保存できませんでした。「共有」から保存先を選んでください。\n{error}'**
+  String videoGallerySaveFailed(Object error);
+
+  /// No description provided for @openGallery.
+  ///
+  /// In ja, this message translates to:
+  /// **'ギャラリーを開く'**
+  String get openGallery;
+
   /// No description provided for @hardsubVideoShareSubject.
   ///
   /// In ja, this message translates to:

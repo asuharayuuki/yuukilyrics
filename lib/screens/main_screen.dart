@@ -3,12 +3,15 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import '../services/atomic_file_writer.dart';
 import '../services/ffmpeg_service.dart';
 import '../services/font_service.dart';
+import '../services/text_file_decoder.dart';
 import '../widgets/timeline_waveform.dart';
 import '../widgets/lyrics_editor.dart';
 import '../widgets/toolbar_area.dart';
 import '../widgets/tagging_button.dart';
+import '../widgets/exported_video_dialog.dart';
 import '../widgets/update_check_dialog.dart';
 import '../services/media_player_service.dart';
 import '../services/waveform_extractor.dart';
@@ -233,7 +236,7 @@ class _MainScreenState extends State<MainScreen> {
               bookmark: securityScopedBookmark,
             );
       }
-      final text = await File(path).readAsString();
+      final text = TextFileDecoder.decode(await File(path).readAsBytes()).text;
       if (!mounted) return;
       _lyricsState.loadLrcText(text);
     } catch (error) {
@@ -408,8 +411,11 @@ class _MainScreenState extends State<MainScreen> {
 
       if (outputPath != null) {
         if (!Platform.isAndroid && !Platform.isIOS) {
-          final file = File(outputPath);
-          await file.writeAsString(lrcText);
+          await AtomicFileWriter.writeString(
+            File(outputPath),
+            lrcText,
+            allowDirectFallback: true,
+          );
         }
 
         if (mounted) {
@@ -484,8 +490,11 @@ class _MainScreenState extends State<MainScreen> {
 
       if (outputPath != null) {
         if (!Platform.isAndroid && !Platform.isIOS) {
-          final file = File(outputPath);
-          await file.writeAsString(assContent);
+          await AtomicFileWriter.writeString(
+            File(outputPath),
+            assContent,
+            allowDirectFallback: true,
+          );
         }
 
         if (mounted) {
@@ -517,22 +526,9 @@ class _MainScreenState extends State<MainScreen> {
 
     String? outputPath;
     try {
-      if (Platform.isAndroid) {
-        // Android can expose the app-specific external storage path.
-        final extDir = await getExternalStorageDirectory();
-        if (extDir != null) {
-          final exportDir = Directory('${extDir.path}/exports');
-          if (!await exportDir.exists()) {
-            await exportDir.create(recursive: true);
-          }
-          outputPath = '${exportDir.path}/$filename.mp4';
-        } else {
-          final tempDir = await getTemporaryDirectory();
-          outputPath = '${tempDir.path}/$filename.mp4';
-        }
-      } else if (Platform.isIOS) {
-        // iOS has no external storage directory. Export inside the app
-        // sandbox and hand the result to the existing share action.
+      if (Platform.isAndroid || Platform.isIOS) {
+        // Encode inside the app sandbox first. Android then copies the result
+        // into the shared gallery; both platforms offer sharing afterwards.
         final tempDir = await getTemporaryDirectory();
         outputPath = '${tempDir.path}/$filename.mp4';
       } else {
@@ -552,6 +548,11 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     if (outputPath == null || !mounted) return;
+    // Only remove a partial output on cancel/failure if this export created
+    // it; never delete a file the user already had at that path.
+    final outputFile = File(outputPath);
+    final outputExistedBefore = await outputFile.exists();
+    if (!mounted) return;
 
     ValueNotifier<double> progressNotifier = ValueNotifier(0.0);
     ValueNotifier<String> codecNotifier = ValueNotifier(l10n.detectingEncoder);
@@ -630,6 +631,10 @@ class _MainScreenState extends State<MainScreen> {
       }
       final sandboxDir = await fontService.getSandboxFontsDir();
 
+      // The user may have cancelled while the ASS file and fonts were being
+      // prepared, before FFmpeg had anything to stop.
+      if (isCancelled) throw CancelledException();
+
       await ffmpegService.exportVideo(
         videoPath: _mediaFilePath!,
         assPath: tempAssFile.path,
@@ -649,23 +654,11 @@ class _MainScreenState extends State<MainScreen> {
         Navigator.of(context).pop(); // close dialog
 
         if (Platform.isAndroid || Platform.isIOS) {
-          // Show location + offer share
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l10n.videoSaved(outputPath)),
-              action: SnackBarAction(
-                label: l10n.share,
-                onPressed: () async {
-                  await SharePlus.instance.share(
-                    ShareParams(
-                      files: [XFile(outputPath!)],
-                      subject: l10n.hardsubVideoShareSubject('$filename.mp4'),
-                    ),
-                  );
-                },
-              ),
-              duration: const Duration(seconds: 5),
-            ),
+          await showExportedVideoDialog(
+            context,
+            videoPath: outputPath,
+            shareFileName: '$filename.mp4',
+            saveToGallery: Platform.isAndroid,
           );
         } else {
           ScaffoldMessenger.of(
@@ -674,6 +667,14 @@ class _MainScreenState extends State<MainScreen> {
         }
       }
     } catch (e) {
+      if (!outputExistedBefore) {
+        try {
+          if (await outputFile.exists()) await outputFile.delete();
+        } catch (_) {}
+      }
+      // The cancel button already closed the progress dialog, and a
+      // user-requested stop is not an encoding failure.
+      if (isCancelled || e is CancelledException) return;
       if (mounted) {
         if (Navigator.canPop(context)) Navigator.of(context).pop();
         showDialog(
@@ -967,7 +968,11 @@ class _MainScreenState extends State<MainScreen> {
       );
       if (outputPath == null) return;
       if (!Platform.isAndroid && !Platform.isIOS) {
-        await File(outputPath).writeAsBytes(result.bytes, flush: true);
+        await AtomicFileWriter.writeBytes(
+          File(outputPath),
+          result.bytes,
+          allowDirectFallback: true,
+        );
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

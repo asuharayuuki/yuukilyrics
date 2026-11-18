@@ -149,6 +149,22 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get videoExportComplete => '视频已导出';
+
+  @override
+  String videoSavedToGallery(Object album) {
+    return '已保存到相册的“$album”相簿。';
+  }
+
+  @override
+  String videoGallerySaveFailed(Object error) {
+    return '无法保存到相册。请通过“分享”选择保存位置。\n$error';
+  }
+
+  @override
+  String get openGallery => '打开相册';
+
+  @override
   String hardsubVideoShareSubject(Object fileName) {
     return '带字幕视频：$fileName';
   }

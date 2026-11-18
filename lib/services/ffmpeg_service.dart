@@ -13,11 +13,54 @@ class CancelledException implements Exception {
   String toString() => 'Export cancelled by user';
 }
 
+/// Extracts the latest `time=` value from FFmpeg's stderr stream.
+///
+/// Stream chunks can split a `time=HH:MM:SS.ff` token, so a short tail of
+/// the previous chunk is kept and matched together with the next one.
+class FfmpegProgressParser {
+  static final _timePattern = RegExp(r'time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)');
+  static const _tailLength = 64;
+
+  String _tail = '';
+
+  /// Returns the elapsed seconds reported in [chunk], or null if none.
+  double? feed(String chunk) {
+    final text = _tail + chunk;
+    _tail = text.length > _tailLength
+        ? text.substring(text.length - _tailLength)
+        : text;
+    final matches = _timePattern.allMatches(text);
+    if (matches.isEmpty) return null;
+    final last = matches.last;
+    // A match touching the end may still be cut off (e.g. "time=00:00:1").
+    // Keep it in the tail and report it once the next chunk completes it.
+    if (last.end == text.length) {
+      final earlier = matches.length > 1
+          ? matches.elementAt(matches.length - 2)
+          : null;
+      return earlier == null ? null : _seconds(earlier);
+    }
+    // Drop text that was already consumed so it is not reported twice.
+    final rest = text.substring(last.end);
+    _tail = rest.length > _tailLength
+        ? rest.substring(rest.length - _tailLength)
+        : rest;
+    return _seconds(last);
+  }
+
+  static double _seconds(RegExpMatch match) => FfmpegService.parseTimestamp(
+    match.group(1)!,
+    match.group(2)!,
+    match.group(3)!,
+  );
+}
+
 class FfmpegService {
   bool get isWindows => Platform.isWindows;
   bool get isMobile => Platform.isAndroid || Platform.isIOS;
   Process? _activeProcess;
   Completer<void>? _mobileCompleter;
+  bool _cancelRequested = false;
 
   Future<String> get windowsFfmpegPath async {
     final exeDir = p.dirname(Platform.resolvedExecutable);
@@ -48,31 +91,46 @@ class FfmpegService {
     );
   }
 
-  Future<int> getVideoDurationSec(String videoPath) async {
+  /// Parses an FFmpeg `HH:MM:SS.ff` timestamp into seconds.
+  @visibleForTesting
+  static double parseTimestamp(String h, String m, String s) =>
+      int.parse(h) * 3600 + int.parse(m) * 60 + double.parse(s);
+
+  static final _durationPattern = RegExp(
+    r'Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)',
+  );
+
+  /// Returns the media duration in seconds, or null when it is unknown.
+  Future<double?> getVideoDurationSec(String videoPath) async {
     if (isWindows) {
       final ffmpeg = await windowsFfmpegPath;
 
       final result = await Process.run(ffmpeg, ['-i', videoPath]);
       // ffprobe is better, but we only have ffmpeg.exe bundled for now.
       // FFmpeg prints info to stderr.
-      final output = result.stderr.toString();
-      final regex = RegExp(r"Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})");
-      final match = regex.firstMatch(output);
-      if (match != null) {
-        int h = int.parse(match.group(1)!);
-        int m = int.parse(match.group(2)!);
-        int s = int.parse(match.group(3)!);
-        return h * 3600 + m * 60 + s;
-      }
-      return 1;
+      final match = _durationPattern.firstMatch(result.stderr.toString());
+      if (match == null) return null;
+      final seconds = parseTimestamp(
+        match.group(1)!,
+        match.group(2)!,
+        match.group(3)!,
+      );
+      return seconds > 0 ? seconds : null;
     } else {
       final session = await FFprobeKit.getMediaInformation(videoPath);
-      final mediaInfo = session.getMediaInformation();
-      if (mediaInfo != null) {
-        return double.parse(mediaInfo.getDuration() ?? "1").toInt();
-      }
-      return 1;
+      final seconds = double.tryParse(
+        session.getMediaInformation()?.getDuration() ?? '',
+      );
+      return seconds != null && seconds > 0 ? seconds : null;
     }
+  }
+
+  /// Converts elapsed encode time into a 0–1 progress value. Returns null
+  /// when the total duration is unknown, so callers can skip the update.
+  @visibleForTesting
+  static double? progressFraction(double elapsedSec, double? totalSec) {
+    if (totalSec == null || totalSec <= 0 || elapsedSec.isNaN) return null;
+    return (elapsedSec / totalSec).clamp(0.0, 1.0);
   }
 
   Future<({int width, int height})?> getVideoResolution(
@@ -337,10 +395,17 @@ class FfmpegService {
     required Function(double) onProgress,
     Function(String)? onEncoderDetected,
   }) async {
+    _cancelRequested = false;
+    void throwIfCancelled() {
+      if (_cancelRequested) throw CancelledException();
+    }
+
     final totalDuration = await getVideoDurationSec(videoPath);
+    throwIfCancelled();
 
     // Detect the best available encoder for this device
     final detected = await detectBestEncoder(preferHwAccel: useHwAccel);
+    throwIfCancelled();
     final encoder = detected.encoder;
     debugPrint('Selected encoder: $encoder (hardware: ${detected.isHardware})');
     if (onEncoderDetected != null) {
@@ -391,26 +456,25 @@ class FfmpegService {
         },
       );
 
+      // A cancel may have arrived while the process was starting.
+      if (_cancelRequested) _activeProcess!.kill();
+
       final stderrBuffer = StringBuffer();
+      final progressParser = FfmpegProgressParser();
       _activeProcess!.stderr.transform(SystemEncoding().decoder).listen((
         output,
       ) {
         debugPrint('FFMPEG LOG: $output');
         stderrBuffer.write(output);
-        final regex = RegExp(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})");
-        final match = regex.firstMatch(output);
-        if (match != null) {
-          int h = int.parse(match.group(1)!);
-          int m = int.parse(match.group(2)!);
-          int s = int.parse(match.group(3)!);
-          int currentSec = h * 3600 + m * 60 + s;
-          double progress = (currentSec / totalDuration);
-          onProgress(progress.clamp(0.0, 1.0));
-        }
+        final elapsed = progressParser.feed(output);
+        if (elapsed == null) return;
+        final progress = progressFraction(elapsed, totalDuration);
+        if (progress != null) onProgress(progress);
       });
 
       final exitCode = await _activeProcess!.exitCode;
       _activeProcess = null;
+      throwIfCancelled();
       if (exitCode != 0) {
         throw Exception(
           'Windows での FFmpeg エンコードに失敗しました'
@@ -442,11 +506,15 @@ class FfmpegService {
         },
         (log) {},
         (statistics) {
-          double currentSec = statistics.getTime() / 1000.0;
-          double progress = (currentSec / totalDuration);
-          onProgress(progress.clamp(0.0, 1.0));
+          final progress = progressFraction(
+            statistics.getTime() / 1000.0,
+            totalDuration,
+          );
+          if (progress != null) onProgress(progress);
         },
       );
+      // A cancel may have arrived before the completer existed.
+      if (_cancelRequested) cancelExport();
       try {
         await _mobileCompleter!.future;
       } finally {
@@ -455,10 +523,13 @@ class FfmpegService {
     }
   }
 
+  /// Stops the running export. Also works before encoding has started:
+  /// [exportVideo] then throws [CancelledException] instead of starting.
   void cancelExport() {
-    if (isWindows && _activeProcess != null) {
-      _activeProcess!.kill();
-    } else if (!isWindows) {
+    _cancelRequested = true;
+    if (isWindows) {
+      _activeProcess?.kill();
+    } else {
       FFmpegKit.cancel();
       if (_mobileCompleter != null && !_mobileCompleter!.isCompleted) {
         _mobileCompleter!.completeError(CancelledException());
@@ -481,6 +552,7 @@ class FfmpegService {
         RegExp(r'^temp_export\.ass$'),
         RegExp(r'^preview_temp\.ass$'),
         RegExp(r'^ass_style_preview_\d+\.(ass|png)$'),
+        RegExp(r'^yuukilyrics_waveform_\d+\.pcm$'),
         RegExp(r'_hardsub\.mp4$'),
       ];
 

@@ -149,6 +149,22 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get videoExportComplete => '動画を書き出しました';
+
+  @override
+  String videoSavedToGallery(Object album) {
+    return 'ギャラリーの「$album」アルバムに保存しました。';
+  }
+
+  @override
+  String videoGallerySaveFailed(Object error) {
+    return 'ギャラリーに保存できませんでした。「共有」から保存先を選んでください。\n$error';
+  }
+
+  @override
+  String get openGallery => 'ギャラリーを開く';
+
+  @override
   String hardsubVideoShareSubject(Object fileName) {
     return '字幕付き動画：$fileName';
   }

@@ -1,11 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Saving exported videos to the gallery on Android 10 and earlier. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
     <application
         android:label="yuukilyrics"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:localeConfig="@xml/locale_config"
         android:largeHeap="true"
+        android:requestLegacyExternalStorage="true"
         android:extractNativeLibs="true">
         <activity
             android:name=".MainActivity"

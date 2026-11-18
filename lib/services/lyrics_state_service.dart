@@ -1,15 +1,40 @@
-import 'package:flutter/material.dart';
-import '../l10n/l10n.dart';
-import 'dart:convert';
-import 'dart:io';
-import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show StringCharacters;
+
 import '../models/lyric_ast.dart';
 import '../parser/lrc_parser.dart';
+import 'auto_tagger.dart';
+import 'text_file_decoder.dart';
+import 'yahoo_furigana_client.dart';
 
-class TextToken {
-  final String text;
-  final bool addTag10;
-  TextToken(this.text, this.addTag10);
+export 'auto_tagger.dart' show TextToken;
+
+/// How [LyricsStateService.autoRubyAndTagDocument] finished.
+enum AutoRubyOutcome {
+  completed,
+
+  /// Stopped by the caller; readings fetched before the stop were applied.
+  cancelled,
+
+  /// The document was replaced mid-request, so nothing was applied.
+  documentChanged,
+}
+
+class AutoRubyProgress {
+  final int completedBatches;
+  final int totalBatches;
+
+  /// True once all requests are done and the document is being updated.
+  final bool applying;
+
+  const AutoRubyProgress({
+    required this.completedBatches,
+    required this.totalBatches,
+    this.applying = false,
+  });
+
+  double get fraction =>
+      totalBatches == 0 ? 1 : (completedBatches / totalBatches).clamp(0, 1);
 }
 
 /// Represents one taggable slot in the document.
@@ -145,17 +170,22 @@ class LyricsStateService extends ChangeNotifier {
 
   // ─── Document Loading ──────────────────────────────────────────
 
+  /// Replaces the current lyrics with [text].
+  ///
+  /// The text is parsed before any state changes, so if parsing throws, the
+  /// previous document, raw text and selection stay intact and the error
+  /// propagates to the caller.
   void loadLrcText(String text) {
-    final cleanText = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final cleanText = TextFileDecoder.stripBom(
+      text,
+    ).replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final document = LrcParser.parseDocument(cleanText);
     _rawText = cleanText;
+    _document = document;
     _selectionPath = null;
     _activeCursor = null;
-    try {
-      _document = LrcParser.parseDocument(cleanText);
-      _rebuildSlotList();
-    } catch (e) {
-      debugPrint('LRC Parse Error: $e');
-    }
+    parseError = null;
+    _rebuildSlotList();
     notifyListeners();
   }
 
@@ -1378,360 +1408,47 @@ class LyricsStateService extends ChangeNotifier {
     return nodes;
   }
 
-  // ─── Auto Tagging ──────────────────────────────────────────────
-
-  void _runAutoTagOnNewNodes(List<LyricLine> lines) {
-    for (int li = 0; li < lines.length; li++) {
-      final line = lines[li];
-
-      // Pass 1: Insert [10] at spaces if surrounded by non-English
-      final preprocessedNodes = _insertTag10AtSpaces(line.nodes);
-
-      final newNodes = <LyricNode>[];
-
-      for (int ni = 0; ni < preprocessedNodes.length; ni++) {
-        final node = preprocessedNodes[ni];
-
-        if (node is LyricRuby) {
-          bool hasTags = node.rubyNodes.any(
-            (rn) => rn is LyricTimeTag && rn.type != 10,
-          );
-          if (!hasTags) {
-            LyricTimeTag? precedingTag;
-            if (newNodes.isNotEmpty &&
-                newNodes.last is LyricTimeTag &&
-                (newNodes.last as LyricTimeTag).type != 10) {
-              precedingTag = newNodes.removeLast() as LyricTimeTag;
-            }
-
-            final newRubyNodes = <LyricNode>[
-              precedingTag ?? LyricTimeTag(type: 1, time: ''),
-              ...node.rubyNodes,
-            ];
-            newNodes.add(
-              LyricRuby(
-                baseText: node.baseText,
-                rubyNodes: newRubyNodes,
-                joinNext: node.joinNext,
-              ),
-            );
-          } else {
-            // Even if it has tags, if there is a redundant empty tag right before it, absorb or discard it
-            if (newNodes.isNotEmpty && newNodes.last is LyricTimeTag) {
-              final lastTag = newNodes.last as LyricTimeTag;
-              if (lastTag.type != 10 && lastTag.time.isEmpty) {
-                newNodes.removeLast();
-              }
-            }
-            newNodes.add(node);
-          }
-        } else if (node is LyricText) {
-          bool isCovered =
-              newNodes.isNotEmpty &&
-              newNodes.last is LyricTimeTag &&
-              (newNodes.last as LyricTimeTag).type != 10;
-
-          final tokens = tokenizeTextAdvanced(node.text);
-          for (int i = 0; i < tokens.length; i++) {
-            final token = tokens[i];
-
-            // Do not add tag for purely whitespace or punctuation tokens
-            bool hasReadableText = RegExp(
-              r'[a-zA-Z0-9\uFF10-\uFF19\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF]',
-            ).hasMatch(token.text);
-            if (!hasReadableText) {
-              newNodes.add(LyricText(token.text));
-              if (token.addTag10) {
-                newNodes.add(LyricTimeTag(type: 10, time: ''));
-              }
-              continue;
-            }
-
-            if (i == 0 && isCovered) {
-              newNodes.add(LyricText(token.text));
-            } else {
-              newNodes.add(LyricTimeTag(type: 1, time: ''));
-              newNodes.add(LyricText(token.text));
-            }
-            if (token.addTag10) {
-              newNodes.add(LyricTimeTag(type: 10, time: ''));
-            }
-          }
-        } else {
-          newNodes.add(node);
-        }
-      }
-
-      if (newNodes.isNotEmpty) {
-        bool alreadyHasEndTag =
-            newNodes.last is LyricTimeTag &&
-            (newNodes.last as LyricTimeTag).type == 10;
-
-        // Only add line-end [10] if the line contains actual non-whitespace text
-        bool hasContent = newNodes.any(
-          (n) => n is LyricRuby || (n is LyricText && n.text.trim().isNotEmpty),
-        );
-        if (hasContent && !alreadyHasEndTag) {
-          newNodes.add(LyricTimeTag(type: 10, time: ''));
-        }
-      }
-
-      final mergedNodes = <LyricNode>[];
-      for (final n in newNodes) {
-        if (mergedNodes.isNotEmpty &&
-            mergedNodes.last is LyricText &&
-            n is LyricText) {
-          final lastText = mergedNodes.removeLast() as LyricText;
-          mergedNodes.add(LyricText(lastText.text + n.text));
-        } else {
-          mergedNodes.add(n);
-        }
-      }
-
-      line.nodes.clear();
-      line.nodes.addAll(mergedNodes);
-    }
-  }
-
-  List<LyricNode> _insertTag10AtSpaces(List<LyricNode> inputNodes) {
-    final List<LyricNode> splitNodes = [];
-    final spaceRegex = RegExp(r'[ \u3000]+');
-
-    for (final node in inputNodes) {
-      if (node is LyricText) {
-        final text = node.text;
-        int lastIndex = 0;
-        for (final match in spaceRegex.allMatches(text)) {
-          if (match.start > lastIndex) {
-            splitNodes.add(LyricText(text.substring(lastIndex, match.start)));
-          }
-          splitNodes.add(LyricText(match.group(0)!));
-          lastIndex = match.end;
-        }
-        if (lastIndex < text.length) {
-          splitNodes.add(LyricText(text.substring(lastIndex)));
-        }
-      } else {
-        splitNodes.add(node);
-      }
-    }
-
-    final List<LyricNode> result = [];
-    final asciiRegex = RegExp(r'[a-zA-Z]');
-
-    for (int i = 0; i < splitNodes.length; i++) {
-      final node = splitNodes[i];
-      if (node is LyricText && spaceRegex.hasMatch(node.text)) {
-        String? prevChar;
-        for (int j = result.length - 1; j >= 0; j--) {
-          final pNode = result[j];
-          if (pNode is LyricText && pNode.text.trim().isNotEmpty) {
-            prevChar = pNode.text.characters.last;
-            break;
-          } else if (pNode is LyricRuby && pNode.baseText.isNotEmpty) {
-            prevChar = pNode.baseText.characters.last;
-            break;
-          }
-        }
-
-        String? nextChar;
-        for (int j = i + 1; j < splitNodes.length; j++) {
-          final nNode = splitNodes[j];
-          if (nNode is LyricText && nNode.text.trim().isNotEmpty) {
-            nextChar = nNode.text.characters.first;
-            break;
-          } else if (nNode is LyricRuby && nNode.baseText.isNotEmpty) {
-            nextChar = nNode.baseText.characters.first;
-            break;
-          }
-        }
-
-        bool prevIsAscii = prevChar != null && asciiRegex.hasMatch(prevChar);
-        bool nextIsAscii = nextChar != null && asciiRegex.hasMatch(nextChar);
-
-        if (prevChar != null &&
-            nextChar != null &&
-            !prevIsAscii &&
-            !nextIsAscii) {
-          bool alreadyHas10 =
-              result.isNotEmpty &&
-              result.last is LyricTimeTag &&
-              (result.last as LyricTimeTag).type == 10;
-          if (!alreadyHas10) {
-            result.add(LyricTimeTag(type: 10, time: ''));
-          }
-        }
-
-        result.add(node);
-      } else {
-        result.add(node);
-      }
-    }
-
-    return result;
-  }
-
-  List<TextToken> tokenizeTextAdvanced(String text) {
-    if (text.isEmpty) return [];
-
-    final units = text.characters.toList();
-    final tokens = <TextToken>[];
-    final buffer = StringBuffer();
-
-    final RegExp asciiRegex = RegExp(r'[a-zA-Z0-9\uFF21-\uFF3A\uFF41-\uFF5A]');
-    final RegExp fullWidthDigitRegex = RegExp(r'[\uFF10-\uFF19]');
-    final RegExp cjkRegex = RegExp(
-      r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF]',
-    );
-    final RegExp punctRegex = RegExp(
-      r'[、。！？，．：；（）「」『』〜ー…\s\u3000-\u303F\uFF00-\uFF0F\uFF1A-\uFF20\uFF3B-\uFF40\uFF5B-\uFF65]',
-    );
-    bool isCjk(String value) {
-      if (cjkRegex.hasMatch(value)) return true;
-      final rune = value.runes.first;
-      return (rune >= 0x20000 && rune <= 0x3FFFF);
-    }
-
-    int i = 0;
-    while (i < units.length) {
-      final char = units[i];
-      if (fullWidthDigitRegex.hasMatch(char)) {
-        tokens.add(TextToken(char, false));
-        i++;
-      } else if (asciiRegex.hasMatch(char)) {
-        buffer.write(char);
-        i++;
-        while (i < units.length &&
-            asciiRegex.hasMatch(units[i]) &&
-            !fullWidthDigitRegex.hasMatch(units[i])) {
-          buffer.write(units[i]);
-          i++;
-        }
-        while (i < units.length &&
-            (punctRegex.hasMatch(units[i]) ||
-                (!asciiRegex.hasMatch(units[i]) &&
-                    !isCjk(units[i]) &&
-                    !fullWidthDigitRegex.hasMatch(units[i])))) {
-          buffer.write(units[i]);
-          i++;
-        }
-        tokens.add(TextToken(buffer.toString(), false));
-        buffer.clear();
-      } else if (isCjk(char)) {
-        buffer.write(char);
-        i++;
-
-        final smallKanaRegex = RegExp(r'[ぁぃぅぇぉっゃゅょァィゥェォッャュョー゛]');
-        while (i < units.length && smallKanaRegex.hasMatch(units[i])) {
-          buffer.write(units[i]);
-          i++;
-        }
-
-        while (i < units.length &&
-            (punctRegex.hasMatch(units[i]) ||
-                (!asciiRegex.hasMatch(units[i]) &&
-                    !isCjk(units[i]) &&
-                    !fullWidthDigitRegex.hasMatch(units[i])))) {
-          buffer.write(units[i]);
-          i++;
-        }
-
-        tokens.add(TextToken(buffer.toString(), false));
-        buffer.clear();
-      } else {
-        buffer.write(char);
-        i++;
-      }
-    }
-
-    if (buffer.isNotEmpty) {
-      if (tokens.isNotEmpty) {
-        final last = tokens.removeLast();
-        tokens.add(TextToken(last.text + buffer.toString(), false));
-      } else {
-        tokens.add(TextToken(buffer.toString(), false));
-      }
-    }
-
-    return tokens;
-  }
+  /// Splits [text] into taggable tokens. See [AutoTagger.tokenize].
+  List<TextToken> tokenizeTextAdvanced(String text) =>
+      AutoTagger.tokenize(text);
 
   // ─── Auto Ruby & Tag (Combined) ──────────────────────────────
 
-  static String yahooAppId = const String.fromEnvironment(
-    'YAHOO_API_KEY',
-    defaultValue:
-        'dmVyPTIwMjUwNyZpZD16dUUwckt6Z0lJJmhhc2g9T0dWaFlqWmtNV1kyWWpFM01tVTRZZw', // Fallback for now so the app still works for the user
-  );
-  bool _autoRubyCancelled = false;
-
-  Future<void> autoRubyAndTagDocument(BuildContext context) async {
-    if (_document == null) return;
-    final l10n = context.l10n;
-    _autoRubyCancelled = false;
-
-    final progressNotifier = ValueNotifier<double>(0.0);
-    final statusNotifier = ValueNotifier<String>(l10n.preparing);
-
-    // Show progress dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(l10n.autoRubyAndChecks),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ValueListenableBuilder<double>(
-                valueListenable: progressNotifier,
-                builder: (context, progress, child) =>
-                    LinearProgressIndicator(value: progress),
-              ),
-              const SizedBox(height: 12),
-              ValueListenableBuilder<String>(
-                valueListenable: statusNotifier,
-                builder: (context, status, child) =>
-                    Text(status, style: const TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                _autoRubyCancelled = true;
-              },
-              child: Text(l10n.stop),
-            ),
-          ],
-        );
-      },
-    );
+  /// Fetches furigana for every untagged text node and then adds check tags.
+  ///
+  /// [onProgress] reports each batch; [isCancelled] is polled between
+  /// batches. When cancelled, readings already fetched are still applied and
+  /// auto-tagged, so stopping keeps the work done so far. If the document is
+  /// replaced while a request is in flight, nothing is changed and
+  /// [AutoRubyOutcome.documentChanged] is returned. Network and API errors
+  /// are rethrown without modifying the document.
+  Future<AutoRubyOutcome> autoRubyAndTagDocument({
+    YahooFuriganaClient client = const YahooFuriganaClient(),
+    void Function(AutoRubyProgress progress)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    final document = _document;
+    if (document == null) return AutoRubyOutcome.completed;
+    bool cancelled() => isCancelled?.call() ?? false;
 
     final jobs = <_RubyJob>[];
-    for (int li = 0; li < _document!.lines.length; li++) {
-      final line = _document!.lines[li];
+    final needsReading = RegExp(r'[a-zA-Z一-龯]');
+    for (int li = 0; li < document.lines.length; li++) {
+      final line = document.lines[li];
       for (int ni = 0; ni < line.nodes.length; ni++) {
         final node = line.nodes[ni];
-        if (node is LyricText) {
-          final hasKanjiOrEng = RegExp(
-            r'[a-zA-Z\u4E00-\u9FAF]',
-          ).hasMatch(node.text);
-          if (hasKanjiOrEng) {
-            jobs.add(_RubyJob(li, ni, node));
-          }
+        if (node is LyricText && needsReading.hasMatch(node.text)) {
+          jobs.add(_RubyJob(li, ni, node));
         }
       }
     }
 
-    // Process jobs in batches
-    final jobResults = <int, Map<int, List<LyricNode>>>{};
+    // Batch requests so each stays well below the API's input limit.
     const maxCharsPerBatch = 2000;
-    List<_RubyJob> currentBatch = [];
-    int currentBatchChars = 0;
-
     final batches = <List<_RubyJob>>[];
-    for (var job in jobs) {
+    var currentBatch = <_RubyJob>[];
+    var currentBatchChars = 0;
+    for (final job in jobs) {
       if (currentBatchChars + job.node.text.length > maxCharsPerBatch &&
           currentBatch.isNotEmpty) {
         batches.add(currentBatch);
@@ -1741,149 +1458,91 @@ class LyricsStateService extends ChangeNotifier {
       currentBatch.add(job);
       currentBatchChars += job.node.text.length + 1;
     }
-    if (currentBatch.isNotEmpty) {
-      batches.add(currentBatch);
-    }
+    if (currentBatch.isNotEmpty) batches.add(currentBatch);
 
-    int completedBatches = 0;
-    for (var batch in batches) {
-      if (_autoRubyCancelled) break;
-
-      progressNotifier.value = completedBatches / batches.length;
-      statusNotifier.value = l10n.fetchingRubyProgress(
-        completedBatches + 1,
-        batches.length,
+    final jobResults = <int, Map<int, List<LyricNode>>>{};
+    var wasCancelled = false;
+    for (var i = 0; i < batches.length; i++) {
+      if (cancelled()) {
+        wasCancelled = true;
+        break;
+      }
+      onProgress?.call(
+        AutoRubyProgress(completedBatches: i, totalBatches: batches.length),
       );
-
-      final texts = batch.map((j) => j.node.text).toList();
-      late final List<List<LyricNode>> batchResults;
-      try {
-        batchResults = await _fetchRubyBatch(texts);
-      } catch (error) {
-        debugPrint('Yahoo API Error: $error');
-        if (context.mounted) {
-          Navigator.of(context, rootNavigator: true).pop();
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(error.toString())));
-        }
-        progressNotifier.dispose();
-        statusNotifier.dispose();
-        return;
+      final batch = batches[i];
+      final batchResults = await client.fetchBatch(
+        batch.map((job) => job.node.text).toList(),
+      );
+      // Indices in the jobs refer to the document as it was when we started.
+      if (!identical(_document, document)) {
+        return AutoRubyOutcome.documentChanged;
       }
-
-      for (int i = 0; i < batch.length; i++) {
-        final job = batch[i];
-        jobResults.putIfAbsent(job.lineIndex, () => {});
-        jobResults[job.lineIndex]![job.nodeIndex] = batchResults[i];
-      }
-
-      completedBatches++;
-    }
-
-    if (!_autoRubyCancelled) {
-      progressNotifier.value = 1.0;
-      statusNotifier.value = l10n.updatingLyrics;
-
-      for (int li = 0; li < _document!.lines.length; li++) {
-        final line = _document!.lines[li];
-        final newNodes = <LyricNode>[];
-        for (int ni = 0; ni < line.nodes.length; ni++) {
-          final node = line.nodes[ni];
-          if (jobResults.containsKey(li) && jobResults[li]!.containsKey(ni)) {
-            final rubyNodes = jobResults[li]![ni];
-            if (rubyNodes != null &&
-                rubyNodes.isNotEmpty &&
-                node is LyricText &&
-                _rubyResultSurface(rubyNodes) == node.text) {
-              if ((rubyNodes.first, newNodes.lastOrNull) case (
-                LyricRuby ruby,
-                LyricTimeTag(type: final type, time: final time),
-              ) when type != 10 && time.isNotEmpty) {
-                final start = ruby.rubyNodes.first as LyricTimeTag;
-                ruby.rubyNodes[0] = LyricTimeTag(type: start.type, time: time);
-                newNodes.removeLast();
-              }
-              newNodes.addAll(rubyNodes);
-            } else {
-              newNodes.add(node);
-            }
-          } else {
-            newNodes.add(node);
-          }
-        }
-        line.nodes.clear();
-        line.nodes.addAll(newNodes);
+      for (var j = 0; j < batch.length; j++) {
+        final job = batch[j];
+        (jobResults[job.lineIndex] ??= {})[job.nodeIndex] = batchResults[j];
       }
     }
+    if (!wasCancelled && cancelled()) wasCancelled = true;
 
-    // Apply auto-tagging (even on partial results if cancelled)
-    _runAutoTagOnNewNodes(_document!.lines);
+    onProgress?.call(
+      AutoRubyProgress(
+        completedBatches: jobResults.isEmpty ? 0 : batches.length,
+        totalBatches: batches.length,
+        applying: true,
+      ),
+    );
+
+    for (int li = 0; li < document.lines.length; li++) {
+      final lineResults = jobResults[li];
+      if (lineResults == null) continue;
+      final line = document.lines[li];
+      final newNodes = <LyricNode>[];
+      for (int ni = 0; ni < line.nodes.length; ni++) {
+        final node = line.nodes[ni];
+        final rubyNodes = lineResults[ni];
+        if (rubyNodes == null ||
+            rubyNodes.isEmpty ||
+            node is! LyricText ||
+            _rubyResultSurface(rubyNodes) != node.text) {
+          newNodes.add(node);
+          continue;
+        }
+        // Move a timed check that precedes the word onto its first ruby.
+        if ((rubyNodes.first, newNodes.lastOrNull) case (
+          LyricRuby ruby,
+          LyricTimeTag(type: final type, time: final time),
+        ) when type != 10 && time.isNotEmpty) {
+          final start = ruby.rubyNodes.first as LyricTimeTag;
+          ruby.rubyNodes[0] = LyricTimeTag(type: start.type, time: time);
+          newNodes.removeLast();
+        }
+        newNodes.addAll(rubyNodes);
+      }
+      line.nodes
+        ..clear()
+        ..addAll(newNodes);
+    }
+
+    if (wasCancelled) {
+      // Only tag lines whose readings all arrived. Tagging the rest would
+      // split their kanji into per-character checks and spoil a later retry.
+      final jobCounts = <int, int>{};
+      for (final job in jobs) {
+        jobCounts[job.lineIndex] = (jobCounts[job.lineIndex] ?? 0) + 1;
+      }
+      AutoTagger.tagLines([
+        for (final MapEntry(key: li, value: results) in jobResults.entries)
+          if (results.length == jobCounts[li]) document.lines[li],
+      ]);
+    } else {
+      AutoTagger.tagLines(document.lines);
+    }
 
     _syncRawText();
     _rebuildSlotList();
     notifyListeners();
-
-    // Close progress dialog
-    if (context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            _autoRubyCancelled
-                ? l10n.autoRubyCancelled
-                : l10n.autoRubyCompleted,
-          ),
-        ),
-      );
-    }
-
-    progressNotifier.dispose();
-    statusNotifier.dispose();
-  }
-
-  /// Splits furigana into mora units, merging small kana, long vowel marks,
-  /// and dakuten with the preceding mora.
-  /// Based on RhythmicaLyrics SakuraYomiBunkai (routin_func.hsp:7077).
-  List<String> _splitIntoMorae(String furigana) {
-    final result = <String>[];
-    final smallKana = RegExp(r'[ぁぃぅぇぉっゃゅょァィゥェォッャュョ]');
-    final longVoiced = RegExp(r'[ー゛]');
-
-    for (final ch in furigana.characters) {
-      if (result.isNotEmpty &&
-          (smallKana.hasMatch(ch) || longVoiced.hasMatch(ch))) {
-        result.last += ch; // merge into preceding mora
-      } else {
-        result.add(ch);
-      }
-    }
-    return result;
-  }
-
-  int _calculateTagCount(String surface, String furigana) {
-    if (RegExp(r'^[a-zA-Z0-9]+$').hasMatch(surface)) return 1;
-    return _splitIntoMorae(furigana).length;
-  }
-
-  /// Expands ruby nodes into interleaved [tag][text][tag][text]... structure.
-  /// Based on RhythmicaLyrics SakuraYomiBunkai decomposition.
-  List<LyricNode> _expandRubyNodes(int type, String surface, String furigana) {
-    final morae = _splitIntoMorae(furigana);
-    if (type <= 1 || morae.length <= 1) {
-      return [LyricTimeTag(type: type, time: ''), LyricText(furigana)];
-    }
-    final expanded = <LyricNode>[];
-    expanded.add(
-      LyricTimeTag(type: type, time: ''),
-    ); // first tag carries the type
-    for (int i = 0; i < morae.length; i++) {
-      expanded.add(LyricText(morae[i]));
-      if (i < morae.length - 1) {
-        expanded.add(LyricTimeTag(type: null, time: ''));
-      }
-    }
-    return expanded;
+    return wasCancelled ? AutoRubyOutcome.cancelled : AutoRubyOutcome.completed;
   }
 
   String _rubyResultSurface(List<LyricNode> nodes) => nodes.map((node) {
@@ -1893,169 +1552,6 @@ class LyricsStateService extends ChangeNotifier {
       _ => '',
     };
   }).join();
-
-  List<({String surface, String? furigana})> _splitYahooWord(
-    String surface,
-    String? furigana,
-    Object? subwords,
-  ) {
-    final wholeWord = [(surface: surface, furigana: furigana)];
-    if (furigana == null ||
-        furigana == surface ||
-        subwords is! List ||
-        subwords.isEmpty) {
-      return wholeWord;
-    }
-
-    final parts = <({String surface, String? furigana})>[];
-    for (final subword in subwords) {
-      if (subword is! Map || subword['surface'] is! String) return wholeWord;
-      final base = subword['surface'] as String;
-      final reading = subword['furigana'];
-      if (base.isEmpty ||
-          (reading != null && (reading is! String || reading.isEmpty))) {
-        return wholeWord;
-      }
-      parts.add((surface: base, furigana: reading as String?));
-    }
-    // Keep an indivisible reading on the whole word if Yahoo's subwords
-    // cannot reconstruct both the original surface and its reading.
-    if (parts.map((part) => part.surface).join() != surface ||
-        parts.map((part) => part.furigana ?? part.surface).join() != furigana) {
-      return wholeWord;
-    }
-    return parts;
-  }
-
-  Future<List<List<LyricNode>>> _fetchRubyBatch(List<String> texts) async {
-    final joinedText = texts.join('\n');
-    final url = Uri.parse(
-      'https://jlp.yahooapis.jp/FuriganaService/V2/furigana',
-    );
-    final requestBody = {
-      "id": "yuukilyrics",
-      "jsonrpc": "2.0",
-      "method": "jlp.furiganaservice.furigana",
-      "params": {"q": joinedText, "grade": 1},
-    };
-
-    final response = await http
-        .post(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Yahoo AppID: $yahooAppId',
-          },
-          body: jsonEncode(requestBody),
-        )
-        .timeout(const Duration(seconds: 10));
-
-    if (response.statusCode == 200) {
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('Invalid Yahoo API response.');
-      }
-      final result = decoded['result'];
-      if (result is! Map<String, dynamic>) {
-        throw const FormatException('Yahoo API result is missing.');
-      }
-      final wordsValue = result['word'];
-      if (wordsValue is! List) {
-        throw const FormatException('Yahoo API word list is missing.');
-      }
-      final words = wordsValue;
-
-      final wordsWithReadings = <({String surface, String? furigana})>[];
-      final smallKanaRegex = RegExp(r'^[ぁぃぅぇぉっゃゅょァィゥェォッャュョー゛]+');
-
-      for (final value in words) {
-        if (value is! Map) {
-          throw const FormatException('Invalid Yahoo API word entry.');
-        }
-        final surfaceValue = value['surface'];
-        final furiganaValue = value['furigana'];
-        if (surfaceValue is! String ||
-            (furiganaValue != null && furiganaValue is! String)) {
-          throw const FormatException('Invalid Yahoo API word fields.');
-        }
-        wordsWithReadings.addAll(
-          _splitYahooWord(
-            surfaceValue,
-            furiganaValue as String?,
-            value['subword'],
-          ),
-        );
-      }
-
-      final processedWords = <({String surface, String? furigana})>[];
-      for (final (surface: surface, furigana: furigana) in wordsWithReadings) {
-        final match = smallKanaRegex.firstMatch(surface);
-        if (match != null && processedWords.isNotEmpty) {
-          final kana = match.group(0)!;
-          final prev = processedWords.last;
-          if (!prev.surface.contains('\n') &&
-              (furigana == null || furigana.startsWith(kana))) {
-            processedWords.last = (
-              surface: prev.surface + kana,
-              furigana: prev.furigana == null ? null : prev.furigana! + kana,
-            );
-            final remainder = surface.substring(kana.length);
-            if (remainder.isNotEmpty) {
-              processedWords.add((
-                surface: remainder,
-                furigana: furigana?.substring(kana.length),
-              ));
-            }
-            continue;
-          }
-        }
-        processedWords.add((surface: surface, furigana: furigana));
-      }
-
-      final batchResults = <List<LyricNode>>[];
-      var currentNodes = <LyricNode>[];
-
-      for (final (surface: surface, furigana: furigana) in processedWords) {
-        if (surface.contains('\n')) {
-          final parts = surface.split('\n');
-          for (int i = 0; i < parts.length; i++) {
-            final part = parts[i];
-            if (part.isNotEmpty) {
-              currentNodes.add(LyricText(part));
-            }
-            if (i < parts.length - 1) {
-              batchResults.add(currentNodes);
-              currentNodes = [];
-            }
-          }
-        } else {
-          if (furigana != null && furigana.isNotEmpty && furigana != surface) {
-            final int type = _calculateTagCount(surface, furigana);
-            currentNodes.add(
-              LyricRuby(
-                baseText: surface,
-                rubyNodes: _expandRubyNodes(type, surface, furigana),
-              ),
-            );
-          } else {
-            currentNodes.add(LyricText(surface));
-          }
-        }
-      }
-      batchResults.add(currentNodes);
-      if (batchResults.length != texts.length) {
-        throw FormatException(
-          'Yahoo API returned ${batchResults.length} lines for '
-          '${texts.length} inputs.',
-        );
-      }
-      return batchResults;
-    }
-    throw HttpException(
-      'Yahoo API request failed with status ${response.statusCode}.',
-      uri: url,
-    );
-  }
 }
 
 class _RubyJob {

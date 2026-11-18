@@ -14,7 +14,11 @@ class LyricTimeTag extends LyricNode {
   bool get isEmpty => time.isEmpty;
 
   /// Converts duration to mm:ss:xx (hundredths of second) format.
+  ///
+  /// Negative durations are clamped to zero: a tag such as `00:-1:-50`
+  /// would not parse back and would silently turn into lyric text.
   static String formatDuration(Duration d) {
+    if (d.isNegative) d = Duration.zero;
     final mm = d.inMinutes.toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     final xx = (d.inMilliseconds.remainder(1000) ~/ 10).toString().padLeft(
@@ -94,19 +98,24 @@ class LyricRuby extends LyricNode {
         .where((node) => node is! LyricTimeTag || node.type != 10)
         .toList();
 
-    // If NO tags have timestamps, and the first tag has a type, output the clean version!
-    bool hasAnyTime = contentNodes.whereType<LyricTimeTag>().any(
-      (t) => t.time.isNotEmpty,
-    );
-    if (!hasAnyTime) {
-      final firstTag = contentNodes.whereType<LyricTimeTag>().firstOrNull;
-      if (firstTag != null && firstTag.type != null) {
-        final fullText = contentNodes
-            .whereType<LyricText>()
-            .map((e) => e.text)
-            .join();
-        return '[${firstTag.type}]$fullText';
-      }
+    // Untimed ruby in the editor's canonical shape — a leading typed tag
+    // carrying the check count, followed only by untyped, untimed placeholder
+    // tags between morae — is written compactly as `[n]reading`. Anything
+    // else (a later typed tag, or text before the first tag) carries meaning
+    // that collapsing would lose, so it is written verbatim.
+    final tags = contentNodes.whereType<LyricTimeTag>().toList();
+    final first = contentNodes.firstOrNull;
+    final isCanonicalUntimed =
+        first is LyricTimeTag &&
+        first.type != null &&
+        tags.every((tag) => tag.time.isEmpty) &&
+        tags.skip(1).every((tag) => tag.type == null);
+    if (isCanonicalUntimed) {
+      final fullText = contentNodes
+          .whereType<LyricText>()
+          .map((e) => e.text)
+          .join();
+      return '[${first.type}]$fullText';
     }
 
     return rubyNodes.map((e) => e.toLrcString()).join();

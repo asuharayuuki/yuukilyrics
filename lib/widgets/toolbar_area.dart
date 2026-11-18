@@ -5,6 +5,7 @@ import '../services/color_preset_library_service.dart';
 import '../models/color_preset_asset.dart';
 import '../models/lyric_ast.dart';
 import '../l10n/l10n.dart';
+import 'auto_ruby_runner.dart';
 import 'dual_color_preview.dart';
 
 class ToolbarAreaPageState {
@@ -208,7 +209,7 @@ class _ToolbarAreaState extends State<ToolbarArea> {
                       tooltip: context.l10n.autoRubyAndChecks,
                       icon: const Icon(Icons.auto_fix_high),
                       onPressed: () =>
-                          widget.lyricsState.autoRubyAndTagDocument(context),
+                          runAutoRubyWithProgress(context, widget.lyricsState),
                     ),
 
                     const _Divider(),

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/font_library_asset.dart';
+import 'atomic_file_writer.dart';
 import 'font_service.dart';
 
 class FontLibraryService extends ChangeNotifier {
@@ -134,9 +135,7 @@ class FontLibraryService extends ChangeNotifier {
       final temporary = File(temporaryPath);
       if (await temporary.exists()) await temporary.delete();
       await source.copy(temporaryPath);
-      final destination = File(destinationPath);
-      if (await destination.exists()) await destination.delete();
-      await temporary.rename(destinationPath);
+      await AtomicFileWriter.install(temporary, File(destinationPath));
       if (existing != null && !p.equals(existing.path, destinationPath)) {
         final oldFile = File(existing.path);
         if (await oldFile.exists()) await oldFile.delete();
@@ -164,10 +163,18 @@ class FontLibraryService extends ChangeNotifier {
     final key =
         '${asset.path}|${asset.fileSize}|'
         '${asset.lastModified.microsecondsSinceEpoch}|$faceIndex';
-    return _previewFontLoads.putIfAbsent(
-      key,
-      () => _loadPreviewFontFamily(asset.path, faceIndex, key),
-    );
+    return _previewFontLoads.putIfAbsent(key, () {
+      final load = _loadPreviewFontFamily(asset.path, faceIndex, key);
+      // Forget failed loads so a later request can retry instead of
+      // receiving the cached error until the app restarts.
+      load.catchError((Object _) {
+        if (identical(_previewFontLoads[key], load)) {
+          _previewFontLoads.remove(key);
+        }
+        return '';
+      });
+      return load;
+    });
   }
 
   Future<String> _loadPreviewFontFamily(

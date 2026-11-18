@@ -1,5 +1,5 @@
 name: yuukilyrics
-description: "A new Flutter project."
+description: "Karaoke lyric editor with furigana editing and ASS subtitle export."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -55,6 +55,8 @@ dependencies:
   path: ^1.9.1
   characters: ^1.3.0
   archive: ^4.0.9
+  charset: 2.0.1
+  gal: 2.3.3
 
 dev_dependencies:
   flutter_test:
