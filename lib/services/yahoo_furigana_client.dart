@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:characters/characters.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/lyric_ast.dart';
+import 'morae.dart';
 
 /// Client for the Yahoo! JAPAN furigana API that converts its words into
 /// ruby nodes with RhythmicaLyrics check counts.
@@ -23,34 +23,15 @@ class YahooFuriganaClient {
 
   const YahooFuriganaClient({this.appId = defaultAppId, this.httpClient});
 
-  /// Splits furigana into mora units, merging small kana, long vowel marks,
-  /// and dakuten with the preceding mora.
-  /// Based on RhythmicaLyrics SakuraYomiBunkai (routin_func.hsp:7077).
-  List<String> _splitIntoMorae(String furigana) {
-    final result = <String>[];
-    final smallKana = RegExp(r'[ぁぃぅぇぉっゃゅょァィゥェォッャュョ]');
-    final longVoiced = RegExp(r'[ー゛]');
-
-    for (final ch in furigana.characters) {
-      if (result.isNotEmpty &&
-          (smallKana.hasMatch(ch) || longVoiced.hasMatch(ch))) {
-        result.last += ch; // merge into preceding mora
-      } else {
-        result.add(ch);
-      }
-    }
-    return result;
-  }
-
   int _calculateTagCount(String surface, String furigana) {
     if (RegExp(r'^[a-zA-Z0-9]+$').hasMatch(surface)) return 1;
-    return _splitIntoMorae(furigana).length;
+    return splitMorae(furigana).length;
   }
 
   /// Expands ruby nodes into interleaved [tag][text][tag][text]... structure.
   /// Based on RhythmicaLyrics SakuraYomiBunkai decomposition.
   List<LyricNode> _expandRubyNodes(int type, String surface, String furigana) {
-    final morae = _splitIntoMorae(furigana);
+    final morae = splitMorae(furigana);
     if (type <= 1 || morae.length <= 1) {
       return [LyricTimeTag(type: type, time: ''), LyricText(furigana)];
     }

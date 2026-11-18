@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart' show StringCharacters;
 import '../models/lyric_ast.dart';
 import '../parser/lrc_parser.dart';
 import 'auto_tagger.dart';
+import 'morae.dart';
 import 'singer_markers.dart';
 import 'text_file_decoder.dart';
 import 'yahoo_furigana_client.dart';
@@ -1264,7 +1265,8 @@ class LyricsStateService extends ChangeNotifier {
         }
       }
       final combinedRubyText = texts.join().replaceAll('＋', '');
-      final rubyChars = combinedRubyText.characters.toList();
+      // Distribute whole morae so a split never cuts `きょ` in half.
+      final rubyChars = splitMorae(combinedRubyText);
 
       int tagsPerChar = baseChars.isEmpty ? 0 : tags.length ~/ baseChars.length;
       int tagsRemainder = baseChars.isEmpty
@@ -1384,9 +1386,13 @@ class LyricsStateService extends ChangeNotifier {
     return foundMarker ? segments : null;
   }
 
-  /// Helper to properly interleave tags and characters for LyricRuby
+  /// Interleaves [tags] with the morae of [text]: tag i precedes mora i,
+  /// and the last tag takes the rest of the reading.
+  ///
+  /// Splitting by mora rather than by character keeps small kana with their
+  /// syllable, so the second check of `きょう` times `う`, not `ょう`.
   List<LyricNode> _rebuildRubyNodes(List<LyricTimeTag> tags, String text) {
-    final chars = text.characters.toList();
+    final chars = splitMorae(text);
     final nodes = <LyricNode>[];
 
     if (tags.isEmpty) {

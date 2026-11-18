@@ -118,7 +118,25 @@ class LyricRuby extends LyricNode {
       return '[${first.type}]$fullText';
     }
 
-    return rubyNodes.map((e) => e.toLrcString()).join();
+    // An untyped, untimed `[]` only marks where a later mora would start.
+    // After the last timed tag it carries no information (morae are
+    // re-derived from the reading when they are timed), and
+    // RhythmicaLyrics cannot read it: it shows `[]` as part of the ruby.
+    // Placeholders before a timed tag still fix that tag's mora, so they stay.
+    final lastTimed = rubyNodes.lastIndexWhere(
+      (node) => node is LyricTimeTag && node.time.isNotEmpty,
+    );
+    final buffer = StringBuffer();
+    for (var index = 0; index < rubyNodes.length; index++) {
+      final node = rubyNodes[index];
+      final isTrailingPlaceholder =
+          index > lastTimed &&
+          node is LyricTimeTag &&
+          node.type == null &&
+          node.time.isEmpty;
+      if (!isTrailingPlaceholder) buffer.write(node.toLrcString());
+    }
+    return buffer.toString();
   }
 
   String endTagsToLrcString() {
