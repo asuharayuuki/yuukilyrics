@@ -32,8 +32,8 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        versionCode = 11
-        versionName = "2026.11.17"
+        versionCode = 12
+        versionName = "2026.11.18"
 
         ndk {
             abiFilters += "arm64-v8a"
