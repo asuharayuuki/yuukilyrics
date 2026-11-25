@@ -45,7 +45,9 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('デフォルト配色'));
+    // The default row's name is an editable field; its colors open from the
+    // preview, as for every other row.
+    await tester.tap(find.byTooltip('配色を編集').first);
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('配色コードをコピー'));
     await tester.pump();

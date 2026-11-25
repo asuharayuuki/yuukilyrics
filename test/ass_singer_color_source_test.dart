@@ -51,6 +51,17 @@ void main() {
       );
       await tester.pump();
 
+      // Text of the default row's name field.
+      String defaultNameText() => tester
+          .widget<TextField>(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is TextField && widget.decoration?.hintText == '默认配色',
+            ),
+          )
+          .controller!
+          .text;
+
       await tester.tap(find.text('源代码'));
       await tester.pumpAndSettle();
 
@@ -113,8 +124,9 @@ void main() {
       await tester.tap(delete.first);
       await tester.pumpAndSettle();
       expect(delete, findsNWidgets(2));
-      expect(find.text('Alice/Carol'), findsOneWidget);
-      expect(find.text('默认配色'), findsNothing);
+      // The promoted row shows its own name. (The default label stays in
+      // the tree only as the field's hidden hint.)
+      expect(defaultNameText(), 'Alice/Carol');
       expect(find.text('Singer B'), findsOneWidget);
       expect(presets.activePresets.map((preset) => preset.name), [
         'Alice/Carol',
@@ -164,8 +176,7 @@ void main() {
       await tester.tap(delete.first);
       await tester.pumpAndSettle();
       expect(delete, findsNothing);
-      expect(find.text('Singer B'), findsOneWidget);
-      expect(find.text('默认配色'), findsNothing);
+      expect(defaultNameText(), 'Singer B');
       expect(presets.activePresets.map((preset) => preset.name), ['Singer B']);
     },
   );

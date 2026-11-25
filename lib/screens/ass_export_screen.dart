@@ -219,6 +219,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
 
   late final AssExportPageState _pageState;
   late final List<TextEditingController> _singerControllers;
+  late final TextEditingController _defaultColorNameController;
   late TextEditingController _resolutionController;
   bool _isExporting = false;
   String? _previewFontFamily;
@@ -300,6 +301,9 @@ class _AssExportScreenState extends State<AssExportScreen> {
       for (final singer in _singerColors)
         TextEditingController(text: singer.prefix),
     ];
+    _defaultColorNameController = TextEditingController(
+      text: _pageState._defaultColorName ?? '',
+    );
     _resolutionController = TextEditingController(
       text: _pageState._resolutionText,
     );
@@ -397,6 +401,7 @@ class _AssExportScreenState extends State<AssExportScreen> {
     for (var c in _singerControllers) {
       c.dispose();
     }
+    _defaultColorNameController.dispose();
     super.dispose();
   }
 
@@ -478,11 +483,18 @@ class _AssExportScreenState extends State<AssExportScreen> {
       children: [
         _buildSingerColorCard(
           isDefault: true,
-          title: _defaultColorName,
+          controller: _defaultColorNameController,
+          hintText: context.l10n.defaultColors,
           sungColor: _sungTextColor,
           unsungColor: _unsungTextColor,
           onTap: _showDefaultColorSettings,
           onDelete: _singerColors.isEmpty ? null : _deleteDefaultColor,
+          onPrefixChanged: (val) {
+            // A blank name falls back to the localized "default colors"
+            // label and is not used as a line marker.
+            _pageState._defaultColorName = val.trim().isEmpty ? null : val;
+            _publishActiveColorPresets();
+          },
         ),
         for (int i = 0; i < _singerColors.length; i++) ...[
           const SizedBox(height: 6),
@@ -1021,7 +1033,10 @@ class _AssExportScreenState extends State<AssExportScreen> {
     if (_singerColors.isEmpty) return;
     setState(() {
       final promoted = _singerColors.removeAt(0);
-      _pageState._defaultColorName = promoted.prefix;
+      _pageState._defaultColorName = promoted.prefix.trim().isEmpty
+          ? null
+          : promoted.prefix;
+      _defaultColorNameController.text = promoted.prefix;
       _setDefaultColors(promoted);
       _singerControllers.removeAt(0).dispose();
     });
@@ -2364,10 +2379,13 @@ class _AssExportScreenState extends State<AssExportScreen> {
     });
   }
 
+  /// A color row: an editable name (its line marker) and color previews.
+  /// The default row's name is editable too, so a row promoted to default
+  /// by deleting the previous default keeps an editable name.
   Widget _buildSingerColorCard({
     required bool isDefault,
-    String? title,
-    TextEditingController? controller,
+    required TextEditingController controller,
+    String? hintText,
     required AssColorValue sungColor,
     required AssColorValue unsungColor,
     required VoidCallback onTap,
@@ -2387,34 +2405,25 @@ class _AssExportScreenState extends State<AssExportScreen> {
         child: Row(
           children: [
             Expanded(
-              child: isDefault
-                  ? Text(
-                      title ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    )
-                  : TextField(
-                      controller: controller,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: context.l10n.linePrefix,
-                        hintStyle: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w400,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.6,
-                          ),
-                        ),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                      ),
-                      onChanged: onPrefixChanged,
+              child: TextField(
+                controller: controller,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+                decoration: InputDecoration(
+                  hintText: hintText ?? context.l10n.linePrefix,
+                  hintStyle: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w400,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.6,
                     ),
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                ),
+                onChanged: onPrefixChanged,
+              ),
             ),
             const SizedBox(width: 16),
             Tooltip(
